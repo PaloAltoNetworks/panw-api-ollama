@@ -60,16 +60,23 @@ impl StreamBuffer {
     /// Initializes all buffers as empty and sets default values for assessment
     /// parameters such as the assessment window size and sentence boundary characters.
     fn new() -> Self {
+        // Set initial capacity based on expected usage
+        // For text buffers: Use a fraction of assessment_window as initial capacity
+        // to balance between memory usage and avoiding frequent reallocations
+        let assessment_window = 100000;
+        let text_capacity = assessment_window / 10; // Start with 10% of max assessment window
+        let vec_capacity = 8; // Default small vector capacity for most collections
+
         Self {
-            text_buffer: String::new(),
-            code_buffer: String::new(),
+            text_buffer: String::with_capacity(text_capacity),
+            code_buffer: String::with_capacity(text_capacity),
             in_code_block: false,
             read_pos: 0,
-            output_buffer: Vec::new(),
-            text_buffer_complete: Vec::new(),
-            code_buffer_complete: Vec::new(),
-            pending_buffer: Vec::new(),
-            assessment_window: 100000,
+            output_buffer: Vec::with_capacity(vec_capacity),
+            text_buffer_complete: Vec::with_capacity(vec_capacity),
+            code_buffer_complete: Vec::with_capacity(vec_capacity),
+            pending_buffer: Vec::with_capacity(vec_capacity),
+            assessment_window,
             sentence_boundary_chars: &['\n'],
             last_was_boundary: false,
             waiting_for_assessment: false,
@@ -98,8 +105,27 @@ impl StreamBuffer {
                 // Look for code block markers in the incoming content
                 if content.contains("```") {
                     // Contains a code block marker, need special processing
-                    let mut in_block = self.in_code_block;
                     let parts: Vec<&str> = content.split("```").collect();
+                    let mut in_block = self.in_code_block;
+
+                    // Estimate total capacity needed to avoid multiple reallocations
+                    let additional_text_needed = parts
+                        .iter()
+                        .enumerate()
+                        .filter(|&(i, _)| i % 2 == (if in_block { 1 } else { 0 }))
+                        .map(|(_, part)| part.len())
+                        .sum::<usize>();
+
+                    let additional_code_needed = parts
+                        .iter()
+                        .enumerate()
+                        .filter(|&(i, _)| i % 2 == (if in_block { 0 } else { 1 }))
+                        .map(|(_, part)| part.len())
+                        .sum::<usize>();
+
+                    // Reserve capacity before adding strings
+                    self.text_buffer.reserve(additional_text_needed);
+                    self.code_buffer.reserve(additional_code_needed);
 
                     for (i, part) in parts.iter().enumerate() {
                         if i == 0 && !in_block {
@@ -131,9 +157,12 @@ impl StreamBuffer {
                     self.in_code_block = in_block;
                 } else {
                     // No code block markers, add to the appropriate buffer
+                    // Reserve capacity before adding content
                     if self.in_code_block {
+                        self.code_buffer.reserve(content.len());
                         self.code_buffer.push_str(content);
                     } else {
+                        self.text_buffer.reserve(content.len());
                         self.text_buffer.push_str(content);
                     }
                 }
@@ -397,7 +426,23 @@ impl StreamBuffer {
     ///
     /// Some(Bytes) if there is content to return, None otherwise
     fn create_complete_response(&mut self) -> Option<Bytes> {
-        let mut combined_data = Vec::new();
+        // Pre-calculate the total buffer size needed to avoid reallocations
+        let total_size = if self.has_complete_code {
+            self.code_buffer_complete
+                .iter()
+                .map(|b| b.len())
+                .sum::<usize>()
+        } else if self.has_complete_text {
+            self.text_buffer_complete
+                .iter()
+                .map(|b| b.len())
+                .sum::<usize>()
+        } else {
+            self.output_buffer.iter().map(|b| b.len()).sum::<usize>()
+        };
+
+        // Pre-allocate with the right size
+        let mut combined_data = Vec::with_capacity(total_size);
 
         // If we have complete code, prioritize that
         if self.has_complete_code {
