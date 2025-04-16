@@ -134,14 +134,6 @@ pub fn format_security_violation_message(assessment: &crate::security::Assessmen
     )
 }
 
-// Logs security assessment failures.
-pub fn log_security_failure(context: &str, category: &str, action: &str) {
-    info!(
-        "Security issue detected in {}: category={}, action={}",
-        context, category, action
-    );
-}
-
 // Builds a response with serialized data for a security violation.
 pub fn build_violation_response<T>(data: T) -> Result<Response<Body>, ApiError>
 where
@@ -152,4 +144,46 @@ where
         ApiError::InternalError("Failed to serialize response".to_string())
     })?;
     build_json_response(Bytes::from(json_bytes))
+}
+
+/// Extract and log LLM performance metrics from JSON response data
+/// 
+/// # Arguments
+/// 
+/// * `json_data` - The JSON data potentially containing LLM metrics
+/// * `is_streaming` - Whether this is from a streaming response or not
+/// 
+/// # Returns
+/// 
+/// Returns true if metrics were found and logged, false otherwise
+pub fn log_llm_metrics(json_data: &serde_json::Value, is_streaming: bool) -> bool {
+    let eval_metrics = [
+        ("total_duration", json_data.get("total_duration")),
+        ("load_duration", json_data.get("load_duration")),
+        ("prompt_eval_count", json_data.get("prompt_eval_count")),
+        ("prompt_eval_duration", json_data.get("prompt_eval_duration")),
+        ("eval_count", json_data.get("eval_count")),
+        ("eval_duration", json_data.get("eval_duration")),
+    ];
+    
+    let metrics_string: Vec<String> = eval_metrics
+        .iter()
+        .filter_map(|(name, value)| {
+            value.and_then(|v| v.as_u64()).map(|v| {
+                if name.contains("duration") && !name.contains("count") {
+                    format!("{}: {}ms", name, v / 1_000_000) // Convert ns to ms
+                } else {
+                    format!("{}: {}", name, v)
+                }
+            })
+        })
+        .collect();
+    
+    if !metrics_string.is_empty() {
+        let mode = if is_streaming { "streaming" } else { "non-streaming" };
+        info!("LLM {} performance metrics - {}", mode, metrics_string.join(", "));
+        true
+    } else {
+        false
+    }
 }

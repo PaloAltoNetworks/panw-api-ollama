@@ -20,7 +20,7 @@ use tracing::{debug, error, info};
 
 use crate::handlers::utils::{
     build_json_response, build_violation_response, format_security_violation_message,
-    handle_streaming_request, log_security_failure,
+    handle_streaming_request, log_llm_metrics,
 };
 use crate::handlers::ApiError;
 use crate::types::{ChatRequest, ChatResponse, Message};
@@ -113,8 +113,6 @@ async fn assess_chat_messages(
             .await?;
 
         if !assessment.is_safe {
-            log_security_failure("chat message", &assessment.category, &assessment.action);
-
             let blocked_message = format_security_violation_message(&assessment);
 
             let response = ChatResponse {
@@ -131,7 +129,6 @@ async fn assess_chat_messages(
         }
     }
 
-    info!("Prompt passed security assessment");
     Ok(Ok(()))
 }
 
@@ -170,6 +167,11 @@ async fn handle_non_streaming_chat(
 
     debug!("Received response from Ollama, performing security assessment");
 
+    // Extract and log performance metrics if available
+    if let Ok(json) = serde_json::from_slice::<serde_json::Value>(&body_bytes) {
+        log_llm_metrics(&json, false);
+    }
+
     // Security assessment on response content
     let assessment = state
         .security_client
@@ -177,8 +179,6 @@ async fn handle_non_streaming_chat(
         .await?;
 
     if !assessment.is_safe {
-        log_security_failure("chat response", &assessment.category, &assessment.action);
-
         // Replace content with security violation message
         response_body.message.content = format_security_violation_message(&assessment);
 

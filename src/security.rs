@@ -34,8 +34,9 @@
 // ```
 use crate::types::{AiProfile, Content, Metadata, ScanRequest, ScanResponse};
 use reqwest::Client;
+use std::time::Instant;
 use thiserror::Error;
-use tracing::{debug, error, warn};
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 // Represents errors that can occur during security assessments with the PANW AI Runtime API.
@@ -251,6 +252,8 @@ impl SecurityClient {
         model_name: &str,
         is_prompt: bool,
     ) -> Result<Assessment, SecurityError> {
+        let start_time = Instant::now();
+
         // Optimization: Skip assessment for empty content
         if content.trim().is_empty() {
             debug!("Skipping PANW assessment for empty content");
@@ -266,7 +269,36 @@ impl SecurityClient {
         let scan_result = self.send_security_request(&payload).await?;
 
         // Process results
-        self.process_scan_result(scan_result)
+        let result = self.process_scan_result(scan_result);
+
+        let elapsed_time = start_time.elapsed();
+        let content_type = if is_prompt { "prompt" } else { "response" };
+
+        match &result {
+            Ok(assessment) => {
+                if assessment.is_safe {
+                    info!(
+                        "Security assessment completed in {} ms - {} passed security assessment",
+                        elapsed_time.as_millis(),
+                        content_type
+                    );
+                } else {
+                    warn!(
+                        "Security assessment completed in {} ms - {} failed security assessment: category={}, action={}",
+                        elapsed_time.as_millis(), content_type, assessment.category, assessment.action
+                    );
+                }
+            }
+            Err(e) => {
+                error!(
+                    "Security assessment failed in {} ms - error: {}",
+                    elapsed_time.as_millis(),
+                    e
+                );
+            }
+        }
+
+        result
     }
 
     // Performs a security assessment that includes both text and code content.
@@ -292,6 +324,8 @@ impl SecurityClient {
         model_name: &str,
         is_prompt: bool,
     ) -> Result<Assessment, SecurityError> {
+        let start_time = Instant::now();
+
         // Skip assessment for empty content
         if text_content.trim().is_empty() && code_content.trim().is_empty() {
             debug!("Skipping PANW assessment for empty text and code content");
@@ -323,7 +357,35 @@ impl SecurityClient {
         let scan_result = self.send_security_request(&payload).await?;
 
         // Process results
-        self.process_scan_result(scan_result)
+        let result = self.process_scan_result(scan_result);
+
+        let elapsed_time = start_time.elapsed();
+        let content_type = if is_prompt { "prompt" } else { "response" };
+
+        match &result {
+            Ok(assessment) => {
+                if assessment.is_safe {
+                    info!(
+                        "Security assessment with code completed in {} ms - {} passed security assessment",
+                        elapsed_time.as_millis(), content_type
+                    );
+                } else {
+                    warn!(
+                        "Security assessment with code completed in {} ms - {} failed security assessment: category={}, action={}",
+                        elapsed_time.as_millis(), content_type, assessment.category, assessment.action
+                    );
+                }
+            }
+            Err(e) => {
+                error!(
+                    "Security assessment with code failed in {} ms - error: {}",
+                    elapsed_time.as_millis(),
+                    e
+                );
+            }
+        }
+
+        result
     }
 
     //--------------------------------------------------------------------------
@@ -498,15 +560,6 @@ impl SecurityClient {
             action: scan_result.action.clone(),
             details: scan_result,
         };
-
-        if !assessment.is_safe {
-            warn!(
-                "PANW Security threat detected! Category: {}, Action: {}, Findings: {:#?}",
-                assessment.category, assessment.action, assessment.details
-            );
-        } else {
-            debug!("PANW Security assessment passed: benign content");
-        }
 
         Ok(assessment)
     }

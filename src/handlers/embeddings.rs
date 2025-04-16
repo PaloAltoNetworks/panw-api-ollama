@@ -1,4 +1,4 @@
-use crate::handlers::utils::{build_json_response, build_violation_response, log_security_failure};
+use crate::handlers::utils::{build_json_response, build_violation_response};
 use crate::handlers::ApiError;
 use crate::types::EmbeddingsRequest;
 use crate::types::EmbeddingsResponse;
@@ -22,12 +22,6 @@ pub async fn handle_embeddings(
         .await?;
 
     if !assessment.is_safe {
-        log_security_failure(
-            "embedding request",
-            &assessment.category,
-            &assessment.action,
-        );
-
         // Return a mock embedding response with zeros
         let response = EmbeddingsResponse {
             embedding: vec![0.0; 10], // A small vector of zeros as placeholder

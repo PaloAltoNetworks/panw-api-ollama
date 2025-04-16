@@ -3,11 +3,11 @@
 // This module provides security-enhanced handlers for text generation
 // requests, scanning both prompts and responses for policy violations.
 use axum::{extract::State, response::Response, Json};
-use tracing::{debug, error, info};
+use tracing::{debug, error};
 
 use crate::handlers::utils::{
     build_json_response, build_violation_response, format_security_violation_message,
-    handle_streaming_request, log_security_failure,
+    handle_streaming_request, log_llm_metrics,
 };
 use crate::handlers::ApiError;
 use crate::types::{GenerateRequest, GenerateResponse};
@@ -78,11 +78,7 @@ async fn assess_generate_prompt(
 
     // If the content is not safe, create a blocked response
     if !assessment.is_safe {
-        log_security_failure("prompt", &assessment.category, &assessment.action);
-        info!("Blocked generation request due to security violation in prompt");
-
-        let blocked_message =
-            format_security_violation_message(&assessment);
+        let blocked_message = format_security_violation_message(&assessment);
 
         let response = GenerateResponse {
             model: request.model.clone(),
@@ -95,7 +91,6 @@ async fn assess_generate_prompt(
         return Ok(Err(build_violation_response(response)?));
     }
 
-    info!("Prompt passed security assessment");
     Ok(Ok(()))
 }
 
@@ -128,6 +123,11 @@ async fn handle_non_streaming_generate(
         ApiError::InternalError("Failed to read response body".to_string())
     })?;
 
+    // Extract and log performance metrics if available
+    if let Ok(json) = serde_json::from_slice::<serde_json::Value>(&body_bytes) {
+        log_llm_metrics(&json, false);
+    }
+
     // Parse response
     let mut response_body: GenerateResponse = serde_json::from_slice(&body_bytes).map_err(|e| {
         error!("Failed to parse response: {}", e);
@@ -142,9 +142,6 @@ async fn handle_non_streaming_generate(
 
     // If response is not safe, replace content with security message
     if !assessment.is_safe {
-        log_security_failure("response", &assessment.category, &assessment.action);
-        info!("Blocked unsafe AI-generated content");
-
         // Replace the content with security message
         response_body.response = format_security_violation_message(&assessment);
 

@@ -1,5 +1,5 @@
 use crate::{
-    handlers::utils::format_security_violation_message,
+    handlers::utils::{format_security_violation_message, log_llm_metrics},
     security::{Assessment, SecurityClient},
     types::StreamError,
 };
@@ -715,6 +715,14 @@ where
         is_prompt: bool,
     ) -> Option<Result<Bytes, StreamError>> {
         if let Ok(chunk) = std::str::from_utf8(&bytes) {
+            // Check if this is the final chunk containing LLM metrics
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(chunk) {
+                if json.get("done").and_then(|v| v.as_bool()).unwrap_or(false) == true {
+                    // Use the shared utility function to log metrics
+                    log_llm_metrics(&json, true);
+                }
+            }
+
             // Process the chunk which will now properly separate text and code for assessment
             buffer.process(chunk);
 
