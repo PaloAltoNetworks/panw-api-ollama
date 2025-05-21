@@ -391,6 +391,14 @@ pub struct PromptDetected {
     /// Whether malicious code was detected
     #[serde(default)]
     pub malicious_code: bool,
+
+    /// Whether prompt contains any Agent related threats
+    #[serde(default)]
+    pub agent: bool,
+
+    /// Whether prompt contains any content violates topic guardrails
+    #[serde(default)]
+    pub topic_violation: bool,
 }
 
 /// Security issues detected in an AI response during PANW assessment.
@@ -418,6 +426,18 @@ pub struct ResponseDetected {
     /// Whether malicious code was detected
     #[serde(default)]
     pub malicious_code: bool,
+
+    /// Whether response contains any Agent related threats
+    #[serde(default)]
+    pub agent: bool,
+
+    /// Whether response contains any ungrounded content
+    #[serde(default)]
+    pub ungrounded: bool,
+
+    /// Whether response contains any content violates topic guardrails
+    #[serde(default)]
+    pub topic_violation: bool,
 }
 
 #[derive(Debug, thiserror::Error)]

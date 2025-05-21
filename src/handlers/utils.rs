@@ -99,6 +99,12 @@ pub fn format_security_violation_message(assessment: &crate::security::Assessmen
     if assessment.details.prompt_detected.malicious_code {
         reasons.push("Prompt contains malicious code");
     }
+    if assessment.details.prompt_detected.agent {
+        reasons.push("Prompt contains any Agent related threats");
+    }
+    if assessment.details.prompt_detected.topic_violation {
+        reasons.push("Prompt contains any content violates topic guardrails");
+    }
 
     // Check response detection reasons
     if assessment.details.response_detected.url_cats {
@@ -115,6 +121,15 @@ pub fn format_security_violation_message(assessment: &crate::security::Assessmen
     }
     if assessment.details.response_detected.malicious_code {
         reasons.push("Response contains malicious code");
+    }
+    if assessment.details.response_detected.agent {
+        reasons.push("Response contains any Agent related threats");
+    }
+    if assessment.details.response_detected.ungrounded {
+        reasons.push("Response contains any ungrounded content");
+    }
+    if assessment.details.response_detected.topic_violation {
+        reasons.push("Response contains any content violates topic guardrails");
     }
 
     let reasons_text = if reasons.is_empty() {
