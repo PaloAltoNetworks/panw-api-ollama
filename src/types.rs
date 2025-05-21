@@ -435,7 +435,7 @@ pub struct ResponseDetected {
     #[serde(default)]
     pub ungrounded: bool,
 
-    /// Whether response contains any content violates topic guardrails
+    /// Whether the response contains content that violates topic guardrails
     #[serde(default)]
     pub topic_violation: bool,
 }
