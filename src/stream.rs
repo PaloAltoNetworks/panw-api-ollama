@@ -717,7 +717,7 @@ where
         if let Ok(chunk) = std::str::from_utf8(&bytes) {
             // Check if this is the final chunk containing LLM metrics
             if let Ok(json) = serde_json::from_str::<serde_json::Value>(chunk) {
-                if json.get("done").and_then(|v| v.as_bool()).unwrap_or(false) == true {
+                if json.get("done").and_then(|v| v.as_bool()).unwrap_or(false) {
                     // Use the shared utility function to log metrics
                     log_llm_metrics(&json, true);
                 }
