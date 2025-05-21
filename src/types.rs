@@ -396,7 +396,7 @@ pub struct PromptDetected {
     #[serde(default)]
     pub agent: bool,
 
-    /// Whether prompt contains any content violates topic guardrails
+    /// Whether the prompt contains content that violates topic guardrails
     #[serde(default)]
     pub topic_violation: bool,
 }
