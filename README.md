@@ -86,7 +86,7 @@ ollama pull llama2-uncensored:latest
 
 ### Step 6: Run
 
-```
+```bash
 ./target/release/panw-api-ollama
 ```
 
