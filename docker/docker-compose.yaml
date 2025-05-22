@@ -3,7 +3,7 @@ name: panw-api-ollama
 services:
   ollama:
     volumes:
-      - ./data/ollama:/root/.ollama
+      - ollama:/root/.ollama
     container_name: ollama
     pull_policy: always
     tty: true
@@ -59,4 +59,5 @@ services:
     restart: unless-stopped
 
 volumes:
+  ollama: {}
   open-webui: {}
