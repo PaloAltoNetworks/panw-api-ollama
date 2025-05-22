@@ -80,7 +80,7 @@ Alternatively, update your OpenWebUI environment settings:
 
 Before using the service, make sure you have a model available:
 
-```
+```bash
 ollama pull llama2-uncensored:latest
 ```
 
