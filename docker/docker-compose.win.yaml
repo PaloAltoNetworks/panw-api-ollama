@@ -65,6 +65,7 @@ services:
     environment:
       - 'OLLAMA_BASE_URL=http://panw-api-ollama:11435'
       - 'WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY-}'
+      - 'ENABLE_OPENAI_API=${ENABLE_OPENAI_API-false}'
     extra_hosts:
       - host.docker.internal:host-gateway
     restart: unless-stopped

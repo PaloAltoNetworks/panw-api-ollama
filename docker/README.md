@@ -22,15 +22,7 @@ Copy the required configuration files within the docker folder:
 ```bash
 # Copy environment variables file (required)
 cp ../.env.example ./.env
-
-# Copy OpenWebUI configuration file (optional but recommended)
-cp ./data/open-webui/config.json.example ./data/open-webui/config.json
 ```
-
-The `./data/open-webui/config.json` file contains Docker-specific configurations for OpenWebUI, including:
-- Connection to the panw-api-ollama container via `http://panw-api-ollama:11435`
-- Alternate direct connection to Ollama via `http://host.docker.internal:11434`
-- Model configuration with security profiles
 
 ### Step 2: Configure your environment variables
 
@@ -168,45 +160,6 @@ http://localhost:3000
 ```
 
 OpenWebUI will automatically connect to your panw-api-ollama broker, which then securely connects to Ollama.
-
-## Customize OpenWebUI (Optional)
-
-The Docker setup automatically uses the `custom-config.json` file. This configuration includes:
-
-- Connection to the security proxy via `http://panw-api-ollama:11435` (Docker container name)
-- Optional direct connection to Ollama via `http://host.docker.internal:11434` (for comparison testing)
-- Multiple model configurations with different security profiles
-
-You can modify the `custom-config.json` file to:
-- Change which models are available
-- Adjust UI settings like signup options
-- Configure multiple security profiles for different models
-
-Example modifications to `custom-config.json`:
-```json
-{
-    "version": 0,
-    "ui": {
-        "enable_signup": false  // Set to true to allow new user registrations
-    },
-    "ollama": {
-        "enable": true,
-        "base_urls": [
-            "http://panw-api-ollama:11435"  // Only keep the secure connection
-        ],
-        "api_configs": {
-            "0": {
-                "enable": true,
-                "prefix_id": "SECURE",  // Change the model prefix shown in the UI
-                "model_ids": [
-                    "llama3:latest",    // Update with your actual models
-                    "mistral:latest"
-                ]
-            }
-        }
-    }
-}
-```
 
 Note: The Docker-specific hostnames like `panw-api-ollama` and `host.docker.internal` only work in Docker environments.
 

@@ -44,7 +44,7 @@ services:
     ports:
       - ${OPEN_WEBUI_PORT-3000}:8080
     environment:
-      - 'OLLAMA_BASE_URLS=http://panw-api-ollama:11435'
+      - 'OLLAMA_BASE_URL=http://panw-api-ollama:11435'
       - 'WEBUI_SECRET_KEY=${WEBUI_SECRET_KEY-}'
       - 'ENABLE_OPENAI_API=${ENABLE_OPENAI_API-false}'
     extra_hosts:
