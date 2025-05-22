@@ -92,6 +92,56 @@ ollama pull llama2-uncensored:latest
 
 You're all set! You can now use OpenWebUI as normal, but with enterprise security scanning all interactions.
 
+## Configuration Examples
+
+The project includes example configuration files in the `config-examples` directory that demonstrate different setup options:
+
+### OpenWebUI Global Configuration
+
+The `config-1747909231428.json` file shows how to set up OpenWebUI with both secured and unsecured Ollama connections:
+
+```json
+{
+    "ollama": {
+        "enable": true,
+        "base_urls": [
+            "http://panw-api-ollama:11435",  // Secure connection through panw-api-ollama
+            "http://host.docker.internal:11434"  // Direct connection to Ollama
+        ],
+        "api_configs": {
+            "0": {
+                "enable": true,
+                "tags": [],
+                "prefix_id": "PANW",  // Models with this prefix use the security proxy
+                "model_ids": [
+                    "llama2-uncensored:latest"
+                ],
+                "key": ""
+            },
+            "1": {
+                "enable": true,
+                "tags": [],
+                "prefix_id": "NOPAWN",  // Models with this prefix bypass the security proxy
+                "model_ids": [
+                    "nomic-embed-text:latest",
+                    "llama2-uncensored:latest"
+                ],
+                "key": ""
+            }
+        }
+    }
+}
+```
+
+### Model Configurations
+
+Two example model configurations are included to demonstrate before/after comparisons:
+
+1. `PANW.llama2-uncensored_latest-1747909321539.json` - A model using the security proxy
+2. `NOPAWN.llama2-uncensored_latest-1747909327080.json` - The same model bypassing the security proxy
+
+These configurations allow you to perform side-by-side comparisons and demonstrations of how the Palo Alto Networks AI Runtime Security affects the model responses.
+
 ## Resources
 
 - [Product Information](https://www.paloaltonetworks.com/network-security/ai-runtime-security)

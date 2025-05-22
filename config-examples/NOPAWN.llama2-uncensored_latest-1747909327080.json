@@ -1,0 +1,54 @@
+[
+    {
+        "id": "NOPAWN.llama2-uncensored:latest",
+        "name": "NOPAWN llama2-uncensored",
+        "object": "model",
+        "created": 1747909318,
+        "owned_by": "ollama",
+        "ollama": {
+            "name": "llama2-uncensored:latest",
+            "model": "NOPAWN.llama2-uncensored:latest",
+            "modified_at": "2025-04-05T17:58:58.898718533+02:00",
+            "size": 3825819449,
+            "digest": "44040b9222331f7eacd27ec9254e42de585af28d2c5d1211cdaeb3ffa361fe3f",
+            "details": {
+                "parent_model": "",
+                "format": "gguf",
+                "family": "llama",
+                "families": null,
+                "parameter_size": "7B",
+                "quantization_level": "Q4_0"
+            },
+            "urls": [
+                1
+            ]
+        },
+        "tags": [],
+        "user_id": "6ee7d451-39ea-4255-b027-f445b5863604",
+        "base_model_id": null,
+        "params": {},
+        "meta": {
+            "profile_image_url": "/static/favicon.png",
+            "description": null,
+            "capabilities": {
+                "vision": true,
+                "citations": true
+            },
+            "suggestion_prompts": null,
+            "tags": []
+        },
+        "access_control": {
+            "read": {
+                "group_ids": [],
+                "user_ids": []
+            },
+            "write": {
+                "group_ids": [],
+                "user_ids": []
+            }
+        },
+        "is_active": true,
+        "updated_at": 1747909093,
+        "created_at": 1747909093
+    }
+]

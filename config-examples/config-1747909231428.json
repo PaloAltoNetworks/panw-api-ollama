@@ -1,0 +1,46 @@
+{
+    "version": 0,
+    "ui": {
+        "enable_signup": false
+    },
+    "openai": {
+        "enable": false,
+        "api_base_urls": [
+            "https://api.openai.com/v1"
+        ],
+        "api_keys": [
+            ""
+        ],
+        "api_configs": {
+            "0": {}
+        }
+    },
+    "ollama": {
+        "enable": true,
+        "base_urls": [
+            "http://panw-api-ollama:11435",
+            "http://host.docker.internal:11434"
+        ],
+        "api_configs": {
+            "0": {
+                "enable": true,
+                "tags": [],
+                "prefix_id": "PANW",
+                "model_ids": [
+                    "llama2-uncensored:latest"
+                ],
+                "key": ""
+            },
+            "1": {
+                "enable": true,
+                "tags": [],
+                "prefix_id": "NOPAWN",
+                "model_ids": [
+                    "nomic-embed-text:latest",
+                    "llama2-uncensored:latest"
+                ],
+                "key": ""
+            }
+        }
+    }
+}
