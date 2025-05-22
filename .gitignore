@@ -106,3 +106,4 @@ flake.lock
 # that should not be shared.
 config.yaml
 .env
+custom-config.json

@@ -1,12 +1,18 @@
 services:
   ollama:
     volumes:
-      - ollama:/root/.ollama
+      - ./data/ollama:/root/.ollama
     container_name: ollama
     pull_policy: always
     tty: true
     restart: unless-stopped
     image: ollama/ollama:${OLLAMA_DOCKER_TAG-latest}
+    # Pre-download the model on container start
+    command: >
+      sh -c "ollama serve &
+             sleep 5 &&
+             ollama pull llama2-uncensored:latest &&
+             wait"
     # For Windows with NVIDIA GPU
     deploy:
       resources:
@@ -23,8 +29,8 @@ services:
   panw-api-ollama:
     image: ${PANW_API_IMAGE-ghcr.io/paloaltonetworks/panw-api-ollama:latest}
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: ./docker/Dockerfile
     container_name: panw-api-ollama
     depends_on:
       - ollama
@@ -48,7 +54,8 @@ services:
     image: ghcr.io/open-webui/open-webui:${WEBUI_DOCKER_TAG-main}
     container_name: open-webui
     volumes:
-      - open-webui:/app/backend/data
+      - ./data/open-webui:/app/backend/data
+      - ${CUSTOM_CONFIG_PATH-./custom-config.json}:/app/backend/data/config.json
     depends_on:
       - ollama
       - panw-api-ollama
@@ -60,7 +67,3 @@ services:
     extra_hosts:
       - host.docker.internal:host-gateway
     restart: unless-stopped
-
-volumes:
-  ollama: {}
-  open-webui: {}

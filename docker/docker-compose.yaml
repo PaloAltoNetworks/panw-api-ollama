@@ -1,26 +1,35 @@
-# Docker Compose file for Apple Silicon Macs using native Ollama installation
-# This configuration uses the locally installed Ollama for full Apple Silicon hardware acceleration
-# while running the API wrapper and UI components in Docker.
-
 services:
-  # Native Ollama is used instead of Docker container
-  # Install Ollama from https://ollama.com/download
+  ollama:
+    volumes:
+      - ./data/ollama:/root/.ollama
+    container_name: ollama
+    pull_policy: always
+    tty: true
+    restart: unless-stopped
+    image: ollama/ollama:${OLLAMA_DOCKER_TAG-latest}
+    # Pre-download the model on container start
+    command: >
+      sh -c "ollama serve &
+             sleep 5 &&
+             ollama pull llama2-uncensored:latest &&
+             wait"
 
   panw-api-ollama:
     image: ${PANW_API_IMAGE-ghcr.io/paloaltonetworks/panw-api-ollama:latest}
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: ./docker/Dockerfile
     container_name: panw-api-ollama
-    platform: linux/arm64
+    depends_on:
+      - ollama
+
     env_file:
       - .env
     environment:
       - SERVER_HOST=0.0.0.0
       - SERVER_PORT=11435
       - SERVER_DEBUG_LEVEL=${SERVER_DEBUG_LEVEL-INFO}
-      # Connect to host machine's native Ollama instance
-      - OLLAMA_BASE_URL=http://host.docker.internal:11434
+      - OLLAMA_BASE_URL=http://ollama:11434
       - SECURITY_BASE_URL=${SECURITY_BASE_URL-https://service.api.aisecurity.paloaltonetworks.com}
       - SECURITY_API_KEY=${SECURITY_API_KEY}
       - SECURITY_PROFILE_NAME=${SECURITY_PROFILE_NAME}
@@ -28,16 +37,15 @@ services:
       - SECURITY_APP_USER=${SECURITY_APP_USER-docker}
       - RUST_LOG=${RUST_LOG-info}
     restart: unless-stopped
-    extra_hosts:
-      - host.docker.internal:host-gateway
 
   open-webui:
     image: ghcr.io/open-webui/open-webui:${WEBUI_DOCKER_TAG-main}
     container_name: open-webui
-    platform: linux/arm64
     volumes:
-      - open-webui:/app/backend/data
+      - ./data/open-webui:/app/backend/data
+      - ${CUSTOM_CONFIG_PATH-./custom-config.json}:/app/backend/data/config.json
     depends_on:
+      - ollama
       - panw-api-ollama
     ports:
       - ${OPEN_WEBUI_PORT-3000}:8080
@@ -47,6 +55,3 @@ services:
     extra_hosts:
       - host.docker.internal:host-gateway
     restart: unless-stopped
-
-volumes:
-  open-webui: {}
