@@ -1,7 +1,7 @@
 [
     {
         "id": "PANW.llama2-uncensored:latest",
-        "name": "PAWN llama2-uncensored",
+        "name": "PANW llama2-uncensored",
         "object": "model",
         "created": 1747909318,
         "owned_by": "ollama",
