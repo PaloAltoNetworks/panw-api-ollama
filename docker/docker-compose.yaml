@@ -1,3 +1,5 @@
+name: panw-api-ollama
+
 services:
   ollama:
     volumes:
@@ -42,8 +44,7 @@ services:
     image: ghcr.io/open-webui/open-webui:${WEBUI_DOCKER_TAG-main}
     container_name: open-webui
     volumes:
-      - ./data/open-webui:/app/backend/data
-      - ${CUSTOM_CONFIG_PATH-./custom-config.json}:/app/backend/data/config.json
+      - open-webui:/app/backend/data
     depends_on:
       - ollama
       - panw-api-ollama
@@ -55,3 +56,6 @@ services:
     extra_hosts:
       - host.docker.internal:host-gateway
     restart: unless-stopped
+
+volumes:
+  open-webui: {}
