@@ -41,7 +41,7 @@ The Docker setup provides a complete stack with Ollama, panw-api-ollama, and Ope
 ### Step 1: Install
 
 ```
-git clone https://github.com/lenoxys/panw-api-ollama.git
+git clone https://github.com/PaloAltoNetworks/panw-api-ollama.git
 cd panw-api-ollama
 cargo build --release
 ```
