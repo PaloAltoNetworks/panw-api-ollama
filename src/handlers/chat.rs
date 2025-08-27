@@ -16,6 +16,7 @@
 // - Consistent error handling and security violation reporting
 // - Transparent proxying of valid requests to Ollama backend
 use axum::{extract::State, response::Response, Json};
+use bytes::Bytes;
 use tracing::{debug, error, info};
 
 use crate::handlers::utils::{
@@ -49,7 +50,7 @@ use crate::AppState;
 // * `Err(ApiError)` - If an error occurs during processing
 pub async fn handle_chat(
     State(state): State<AppState>,
-    Json(request): Json<ChatRequest>,
+    Json(mut request): Json<ChatRequest>,
 ) -> Result<Response, ApiError> {
     // Ensure stream parameter is always set
     // request.stream = Some(false);
@@ -62,7 +63,8 @@ pub async fn handle_chat(
     );
 
     // Security assessment: check all input messages for policy violations
-    if let Err(response) = assess_chat_messages(&state, &request).await? {
+    // and potentially replace with masked content
+    if let Err(response) = assess_chat_messages(&state, &mut request).await? {
         return Ok(response);
     }
 
@@ -97,13 +99,15 @@ pub async fn handle_chat(
 // * `Err(ApiError)` - If an error occurs during security assessment
 async fn assess_chat_messages(
     state: &AppState,
-    request: &ChatRequest,
+    request: &mut ChatRequest,
 ) -> Result<Result<(), Response>, ApiError> {
-    for (index, message) in request.messages.iter().enumerate() {
+    let total_messages = request.messages.len();
+    for index in 0..total_messages {
+        let message = &mut request.messages[index];
         debug!(
             "Assessing message {}/{}: role={}",
             index + 1,
-            request.messages.len(),
+            total_messages,
             message.role
         );
 
@@ -114,7 +118,6 @@ async fn assess_chat_messages(
 
         if !assessment.is_safe {
             let blocked_message = format_security_violation_message(&assessment);
-
             let response = ChatResponse {
                 model: request.model.clone(),
                 created_at: chrono::Utc::now().to_rfc3339(),
@@ -124,9 +127,15 @@ async fn assess_chat_messages(
                 },
                 done: true,
             };
-
             return Ok(Err(build_violation_response(response)?));
         }
+
+        // If we have masked content use it
+        if assessment.is_masked {
+            debug!("Using masked content for message with sensitive data");
+            message.content = assessment.final_content.clone();
+        }
+        // Otherwise keep using the original content
     }
 
     Ok(Ok(()))
@@ -181,12 +190,22 @@ async fn handle_non_streaming_chat(
     if !assessment.is_safe {
         // Replace content with security violation message
         response_body.message.content = format_security_violation_message(&assessment);
-
         return build_violation_response(response_body);
     }
 
-    info!("Chat response passed security checks, returning to client");
-    Ok(build_json_response(body_bytes)?)
+    // If we have masked content, use it
+    if assessment.is_masked {
+        response_body.message.content = assessment.final_content;
+        info!("Chat response passed security checks (with masked content), returning to client");
+        let modified_bytes = serde_json::to_vec(&response_body).map_err(|e| {
+            error!("Failed to serialize modified response: {}", e);
+            ApiError::InternalError("Failed to serialize response".to_string())
+        })?;
+        Ok(build_json_response(Bytes::from(modified_bytes))?)
+    } else {
+        info!("Chat response passed security checks, returning to client");
+        Ok(build_json_response(body_bytes)?)
+    }
 }
 
 // Handles streaming chat requests using the generic streaming handler.

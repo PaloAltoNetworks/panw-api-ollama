@@ -77,6 +77,12 @@ pub struct Assessment {
     // Recommended action to take ("allow", "block", etc.)
     pub action: String,
 
+    // The final content to use (original or masked version)
+    pub final_content: String,
+
+    // Whether the final_content is a masked version
+    pub is_masked: bool,
+
     // Complete findings from the PANW AI security scan
     pub details: ScanResponse,
 }
@@ -277,14 +283,24 @@ impl SecurityClient {
         match &result {
             Ok(assessment) => {
                 if assessment.is_safe {
-                    info!(
-                        "Security assessment completed in {} ms - {} passed security assessment",
-                        elapsed_time.as_millis(),
-                        content_type
-                    );
+                    if assessment.is_masked {
+                        info!(
+                            "Security assessment completed in {} ms - {} allowed with masked content: category={}",
+                            elapsed_time.as_millis(),
+                            content_type,
+                            assessment.category
+                        );
+                    } else {
+                        info!(
+                            "Security assessment completed in {} ms - {} allowed without masking: category={}",
+                            elapsed_time.as_millis(),
+                            content_type,
+                            assessment.category
+                        );
+                    }
                 } else {
                     warn!(
-                        "Security assessment completed in {} ms - {} failed security assessment: category={}, action={}",
+                        "Security assessment completed in {} ms - {} blocked: category={}, action={}",
                         elapsed_time.as_millis(), content_type, assessment.category, assessment.action
                     );
                 }
@@ -400,6 +416,8 @@ impl SecurityClient {
             is_safe: true,
             category: "benign".to_string(),
             action: "allow".to_string(),
+            final_content: String::new(),
+            is_masked: false,
             details: ScanResponse::default_safe_response(),
         }
     }
@@ -552,12 +570,32 @@ impl SecurityClient {
     //
     // Assessment object with security evaluation results
     fn process_scan_result(&self, scan_result: ScanResponse) -> Result<Assessment, SecurityError> {
-        let is_safe = scan_result.category == "benign" && scan_result.action != "block";
+        // Content is considered safe unless explicitly blocked
+        let is_safe = scan_result.action != "block";
+
+        // Determine if we have masked content to use - only apply masking for non-blocked content
+        let (final_content, is_masked) = if scan_result.action != "block" {
+            if scan_result.prompt_detected.dlp && !scan_result.prompt_masked_data.data.is_empty() {
+                // Use masked prompt content
+                (scan_result.prompt_masked_data.data.clone(), true)
+            } else if scan_result.response_detected.dlp && !scan_result.response_masked_data.data.is_empty() {
+                // Use masked response content
+                (scan_result.response_masked_data.data.clone(), true)
+            } else {
+                // Not masked, don't provide final_content as we'll keep using the original content
+                (String::new(), false)
+            }
+        } else {
+            // For blocked content, don't provide final_content
+            (String::new(), false)
+        };
 
         let assessment = Assessment {
             is_safe,
             category: scan_result.category.clone(),
             action: scan_result.action.clone(),
+            final_content,
+            is_masked,
             details: scan_result,
         };
 
