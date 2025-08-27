@@ -30,15 +30,25 @@ The best part? It's completely transparent to your existing setup - [Ollama](htt
 - **Protect adversarial input**: Safeguard AI agents from malicious inputs and outputs while maintaining workflow flexibility.
 - **Prevent sensitive data leakage**: Use API-based threat detection to block sensitive data leaks during AI interactions.
 
-## Docker Setup
+## Installation Options
+
+There are two ways to install and run panw-api-ollama:
+
+### Option 1: Docker Setup (Recommended)
+
+Docker is the recommended installation method as it:
+- Handles all permissions automatically
+- Provides a pre-configured environment
+- Eliminates system-level dependency issues
+- Makes updates and maintenance easier
 
 For Docker-based deployment, please refer to the instructions in the [Docker Setup README](docker/README.md).
 
-The Docker setup provides a complete stack with Ollama, panw-api-ollama, and OpenWebUI in a pre-configured environment.
+### Option 2: Build from Source
 
-## Quick Start
+If you prefer to build from source or can't use Docker, you can build the Rust application directly. Note that this method may require additional system configuration and could face permission issues depending on your setup.
 
-### Step 1: Install
+#### Step 1: Build
 
 ```
 git clone https://github.com/lenoxys/panw-api-ollama.git

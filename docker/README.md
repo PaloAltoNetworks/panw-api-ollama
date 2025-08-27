@@ -1,5 +1,21 @@
 # Docker Setup for panw-api-ollama
 
+## Prerequisites
+
+### Install Docker Desktop (Recommended)
+
+We strongly recommend installing Docker Desktop as it provides:
+- A user-friendly interface to manage containers
+- Easy access to container logs through the UI
+- Built-in container monitoring and management
+- Simplified volume and network management
+
+Download and install [Docker Desktop](https://www.docker.com/products/docker-desktop) for your platform (Windows, Mac, or Linux).
+
+Alternative: If you prefer not to use Docker Desktop, you can install the Docker Engine directly, but you'll need to use command-line tools to manage containers and view logs.
+
+## Components
+
 This folder contains all Docker-related files for running the panw-api-ollama stack:
 - Ollama: The AI model server
 - panw-api-ollama: The security proxy 
