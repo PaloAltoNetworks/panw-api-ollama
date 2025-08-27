@@ -13,3 +13,24 @@ security:
   profile_name: "PROFILE_NAME"
   app_name: "panw-api-ollama"
   app_user: "unknow"
+  # When contextual_grounding is not empty, responses will be checked against this context
+  # Example: Set organization policies or facts that responses should adhere to
+  contextual_grounding: |
+    Company Name: Palo Alto Networks
+    Product Names: 
+    - Cortex XDR
+    - Prisma Cloud
+    - Prisma SASE
+    - Unit 42
+    
+    Key Facts:
+    - Founded in 2005
+    - Headquarters in Santa Clara, California
+    - Global leader in cybersecurity
+    - Focuses on threat prevention and zero trust security
+    
+    Policies:
+    - Do not disclose specific customer names
+    - Do not provide pricing information
+    - Do not share unreleased product details
+    - Refer to official documentation for technical specifics

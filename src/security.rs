@@ -32,7 +32,10 @@
 //     // Handle unsafe content
 // }
 // ```
-use crate::types::{AiProfile, Content, Metadata, ScanRequest, ScanResponse};
+use crate::{
+    config::SecurityConfig,
+    types::{AiProfile, Content, Metadata, ScanRequest, ScanResponse},
+};
 use reqwest::Client;
 use std::time::Instant;
 use thiserror::Error;
@@ -145,6 +148,9 @@ pub struct SecurityClient {
 
     // IP address of the end user (optional)
     user_ip: Option<String>,
+
+    // Default context for grounding LLM responses. When not empty, grounding is enabled
+    contextual_grounding_context: String,
 }
 
 impl Content {
@@ -161,6 +167,7 @@ impl Content {
     // * `response` - Optional text representing a response from an AI model
     // * `code_prompt` - Extracted code from prompt
     // * `code_response` - Extracted code from response
+    // * `context` - Contextual grounding information
     //
     // # Returns
     //
@@ -171,6 +178,7 @@ impl Content {
         response: Option<String>,
         code_prompt: Option<String>,
         code_response: Option<String>,
+        context: Option<String>,
     ) -> Result<Self, &'static str> {
         if prompt.is_none()
             && response.is_none()
@@ -184,6 +192,7 @@ impl Content {
             response,
             code_prompt,
             code_response,
+            context,
         })
     }
 }
@@ -195,6 +204,7 @@ pub struct ContentBuilder {
     response: Option<String>,
     code_prompt: Option<String>,
     code_response: Option<String>,
+    context: Option<String>,
 }
 
 impl ContentBuilder {
@@ -233,6 +243,7 @@ impl ContentBuilder {
             self.response,
             self.code_prompt,
             self.code_response,
+            self.context,
         )
     }
 }
@@ -251,20 +262,15 @@ impl SecurityClient {
     // * `profile_name` - Name of the AI security profile to use for assessments
     // * `app_name` - Name of the application using this security client
     // * `app_user` - Identifier for the user or context within the application
-    pub fn new(
-        base_url: &str,
-        api_key: &str,
-        profile_name: &str,
-        app_name: &str,
-        app_user: &str,
-    ) -> Self {
+    pub fn new(config: &SecurityConfig) -> Self {
         Self {
             client: Client::new(),
-            base_url: base_url.to_string(),
-            api_key: api_key.to_string(),
-            profile_name: profile_name.to_string(),
-            app_name: app_name.to_string(),
-            app_user: app_user.to_string(),
+            base_url: config.base_url.clone(),
+            api_key: config.api_key.clone(),
+            profile_name: config.profile_name.clone(),
+            app_name: config.app_name.clone(),
+            app_user: config.app_user.clone(),
+            contextual_grounding_context: config.contextual_grounding.clone(),
             user_ip: None,
         }
     }
@@ -409,11 +415,6 @@ impl SecurityClient {
                 .map_err(|e| SecurityError::AssessmentError(e.to_string()))?
         };
 
-        debug!(
-            "Prepared content with code for PANW assessment: {:#?}",
-            content_obj
-        );
-
         // Create and send the request payload
         let payload = self.create_scan_request(content_obj, model_name);
         let scan_result = self.send_security_request(&payload).await?;
@@ -551,7 +552,7 @@ impl SecurityClient {
         // Use the builder pattern for creating content objects
         let builder = Content::builder();
 
-        let content_builder = if is_prompt {
+        let mut content_builder = if is_prompt {
             let mut builder = builder.with_prompt(text_content);
             if has_code {
                 builder = builder.with_code_prompt(code_blocks);
@@ -564,6 +565,10 @@ impl SecurityClient {
             }
             builder
         };
+
+        if !self.contextual_grounding_context.is_empty() {
+            content_builder.context = Some(self.contextual_grounding_context.clone());
+        }
 
         content_builder
             .build()

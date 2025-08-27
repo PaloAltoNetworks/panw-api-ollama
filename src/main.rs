@@ -207,13 +207,8 @@ fn build_app_state(config: &config::Config) -> Result<AppState, Box<dyn std::err
     );
 
     // Create security client
-    let security_client = SecurityClient::new(
-        &config.security.base_url,
-        &config.security.api_key,
-        &config.security.profile_name,
-        &config.security.app_name,
-        &config.security.app_user,
-    );
+    let security_client = SecurityClient::new(&config.security);
+
     info!(
         "Created security client with base URL: {}",
         config.security.base_url

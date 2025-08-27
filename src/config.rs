@@ -98,6 +98,10 @@ pub struct SecurityConfig {
 
     /// Application user identifier
     pub app_user: String,
+
+    /// Context for grounding LLM responses. When not empty, contextual grounding is enabled.
+    #[serde(default)]
+    pub contextual_grounding: String,
 }
 
 /// Loads configuration from environment variables.
@@ -132,6 +136,7 @@ fn load_from_env() -> Config {
         profile_name: env::var("SECURITY_PROFILE_NAME").unwrap_or_default(),
         app_name: env::var("SECURITY_APP_NAME").unwrap_or_else(|_| "panw-api-ollama".to_string()),
         app_user: env::var("SECURITY_APP_USER").unwrap_or_else(|_| "default".to_string()),
+        contextual_grounding: env::var("SECURITY_CONTEXTUAL_GROUNDING_CONTEXT").unwrap_or_default(),
     };
 
     Config {
@@ -233,6 +238,11 @@ fn override_with_env(config: &mut Config) {
 
     if let Ok(app_user) = env::var("SECURITY_APP_USER") {
         config.security.app_user = app_user;
+    }
+
+    // Load contextual grounding configuration
+    if let Ok(contextual_grounding) = env::var("SECURITY_CONTEXTUAL_GROUNDING_CONTEXT") {
+        config.security.contextual_grounding = contextual_grounding;
     }
 }
 
