@@ -32,7 +32,6 @@ use crate::handlers::ApiError;
 use crate::security::SecurityClient;
 use crate::types::{ChatRequest, ChatResponse, Message};
 use crate::AppState;
-use crate::security::SecurityClient;
 
 //------------------------------------------------------------------------------
 // Public API
