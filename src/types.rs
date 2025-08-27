@@ -282,6 +282,22 @@ pub struct ScanResponse {
     #[serde(default)]
     pub response_detected: ResponseDetected,
 
+    /// Masked sensitive data found in the prompt
+    #[serde(default)]
+    pub prompt_masked_data: MaskedData,
+
+    /// Masked sensitive data found in the response
+    #[serde(default)]
+    pub response_masked_data: MaskedData,
+
+    /// Detailed threat detection information for the prompt
+    #[serde(default)]
+    pub prompt_detection_details: PromptDetectionDetails,
+
+    /// Detailed threat detection information for the response
+    #[serde(default)]
+    pub response_detection_details: ResponseDetectionDetails,
+
     /// Optional timestamp when assessment was created
     #[serde(default)]
     pub created_at: Option<DateTime<Utc>>,
@@ -312,6 +328,10 @@ impl ScanResponse {
             action: "allow".to_string(),
             prompt_detected: PromptDetected::default(),
             response_detected: ResponseDetected::default(),
+            prompt_masked_data: MaskedData::default(),
+            response_masked_data: MaskedData::default(),
+            prompt_detection_details: PromptDetectionDetails::default(),
+            response_detection_details: ResponseDetectionDetails::default(),
             created_at: None,
             completed_at: None,
         }
@@ -399,6 +419,51 @@ pub struct PromptDetected {
     /// Whether the prompt contains content that violates topic guardrails
     #[serde(default)]
     pub topic_violation: bool,
+}
+
+/// A struct representing the locations of detected patterns in masked data.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct OffsetObject(pub Vec<Vec<i32>>);
+
+/// Detection information for specific patterns in masked data.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct PatternDetections {
+    /// The pattern that was matched
+    pub pattern: String,
+    /// The locations where the pattern was found
+    pub locations: OffsetObject,
+}
+
+/// Represents masked sensitive data with detection information.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct MaskedData {
+    /// Original data with sensitive patterns masked
+    pub data: String,
+    /// Information about detected patterns
+    pub pattern_detections: Vec<PatternDetections>,
+}
+
+/// Topic guardrail violation details.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct TopicGuardRails {
+    /// List of allowed topics that matched the content
+    pub allowed_topics: Vec<String>,
+    /// List of blocked topics that matched the content
+    pub blocked_topics: Vec<String>,
+}
+
+/// Detailed information about prompt threat detections.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct PromptDetectionDetails {
+    /// Details about topic guardrail violations
+    pub topic_guardrails_details: TopicGuardRails,
+}
+
+/// Detailed information about response threat detections.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct ResponseDetectionDetails {
+    /// Details about topic guardrail violations
+    pub topic_guardrails_details: TopicGuardRails,
 }
 
 /// Security issues detected in an AI response during PANW assessment.
