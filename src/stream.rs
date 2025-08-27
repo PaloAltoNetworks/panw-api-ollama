@@ -237,7 +237,7 @@ impl StreamBuffer {
     /// # Returns
     ///
     /// A Content structure with the appropriate fields populated
-    fn prepare_assessment_content(&mut self, is_prompt: bool) -> Content {
+    fn prepare_assessment_content(&mut self, is_prompt: bool) -> Content<'_> {
         // Get only the new (unassessed) portions of the text and code buffers
         let new_text = if self.text_buffer.len() > self.last_assessed_text_pos {
             &self.text_buffer[self.last_assessed_text_pos..]
@@ -284,7 +284,7 @@ impl StreamBuffer {
     /// # Returns
     ///
     /// Some(Content) if there is assessable content, None otherwise
-    fn get_assessable_chunk(&mut self, is_prompt: bool) -> Option<Content> {
+    fn get_assessable_chunk(&mut self, is_prompt: bool) -> Option<Content<'_>> {
         let new_text_content = self.text_buffer.len() > self.last_assessed_text_pos;
         let new_code_content = self.code_buffer.len() > self.last_assessed_code_pos;
 
