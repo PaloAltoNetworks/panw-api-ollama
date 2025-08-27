@@ -49,9 +49,37 @@ pub enum SecurityError {
     #[error("HTTP request failed: {0}")]
     RequestError(#[from] reqwest::Error),
 
-    // Errors from the PANW AI Runtime API security service
-    #[error("PANW security assessment error: {0}")]
-    AssessmentError(String),
+    // Bad Request - Request data is invalid or malformed
+    #[error("Bad Request - {0}")]
+    BadRequest(String),
+
+    // Authentication failed
+    #[error("Authentication failed - Not authenticated")]
+    Unauthenticated,
+
+    // Invalid API Key or insufficient permissions
+    #[error("Forbidden - Invalid API key or insufficient permissions")]
+    Forbidden,
+
+    // Requested resource not found
+    #[error("Not Found - Resource not found")]
+    NotFound,
+
+    // HTTP method not allowed for this endpoint
+    #[error("Method Not Allowed - The method is not allowed for this endpoint")]
+    MethodNotAllowed,
+
+    // Request payload too large
+    #[error("Request Too Large - The request payload exceeds size limits")]
+    RequestTooLarge,
+
+    // Unsupported content type
+    #[error("Unsupported Media Type - The content type is not supported")]
+    UnsupportedMediaType,
+
+    // Rate limit exceeded
+    #[error("Too Many Requests - Rate limit exceeded. Retry after {0} {1}")]
+    TooManyRequests(u32, String), // retry interval and unit (e.g., "5", "minute")
 
     // JSON parsing errors when handling API responses
     #[error("JSON parsing error: {0}")]
@@ -60,6 +88,10 @@ pub enum SecurityError {
     // Content that has been blocked by security policy
     #[error("Content blocked by PANW AI security policy: {0}")]
     BlockedContent(String),
+
+    // Generic assessment error for other cases
+    #[error("PANW security assessment error: {0}")]
+    AssessmentError(String),
 }
 
 // Represents the result of a security assessment from PANW AI Runtime API.
@@ -716,13 +748,50 @@ impl SecurityClient {
         debug!("PANW API response status: {}", status);
         debug!("Raw PANW response body:\n{}", body_text);
 
-        // Handle error status codes
+        // Handle error status codes based on OpenAPI specification
         if !status.is_success() {
             error!("PANW security assessment error: {} - {}", status, body_text);
-            return Err(SecurityError::AssessmentError(format!(
-                "Status {}: {}",
-                status, body_text
-            )));
+            
+            // Parse error response if possible
+            let error_details = match serde_json::from_str::<serde_json::Value>(&body_text) {
+                Ok(v) => v.pointer("/error/message")
+                    .and_then(|m| m.as_str())
+                    .map(String::from)
+                    .unwrap_or_else(|| body_text.clone()),
+                Err(_) => body_text.clone(),
+            };
+
+            return match status.as_u16() {
+                400 => Err(SecurityError::BadRequest(error_details)),
+                401 => Err(SecurityError::Unauthenticated),
+                403 => Err(SecurityError::Forbidden),
+                404 => Err(SecurityError::NotFound),
+                405 => Err(SecurityError::MethodNotAllowed),
+                413 => Err(SecurityError::RequestTooLarge),
+                415 => Err(SecurityError::UnsupportedMediaType),
+                429 => {
+                    // Try to parse retry information
+                    let retry_after = serde_json::from_str::<serde_json::Value>(&body_text)
+                        .ok()
+                        .and_then(|v| {
+                            v.pointer("/error/retry_after").and_then(|r| {
+                                let interval = r.get("interval")?.as_u64()? as u32;
+                                let unit = r.get("unit")?.as_str()?;
+                                Some((interval, unit.to_string()))
+                            })
+                        });
+                    
+                    if let Some((interval, unit)) = retry_after {
+                        Err(SecurityError::TooManyRequests(interval, unit))
+                    } else {
+                        Err(SecurityError::TooManyRequests(60, "second".to_string())) // Default retry
+                    }
+                },
+                _ => Err(SecurityError::AssessmentError(format!(
+                    "Status {}: {}",
+                    status, error_details
+                ))),
+            };
         }
 
         // Parse JSON response

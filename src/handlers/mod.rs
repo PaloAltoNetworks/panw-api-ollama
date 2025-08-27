@@ -57,7 +57,28 @@ impl IntoResponse for ApiError {
             },
             ApiError::SecurityError(e) => {
                 error!("Security assessment error: {}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, format!("Security error: {}", e))
+                match e {
+                    crate::security::SecurityError::Forbidden => (
+                        StatusCode::FORBIDDEN,
+                        "Invalid API key or insufficient permissions. Please check your PANW API key configuration.".to_string()
+                    ),
+                    crate::security::SecurityError::Unauthenticated => (
+                        StatusCode::UNAUTHORIZED,
+                        "Authentication failed. Please check your credentials.".to_string()
+                    ),
+                    crate::security::SecurityError::TooManyRequests(interval, unit) => (
+                        StatusCode::TOO_MANY_REQUESTS,
+                        format!("Rate limit exceeded. Please retry after {} {}.", interval, unit)
+                    ),
+                    crate::security::SecurityError::BlockedContent(msg) => (
+                        StatusCode::FORBIDDEN,
+                        format!("Content blocked: {}", msg)
+                    ),
+                    _ => (
+                        StatusCode::INTERNAL_SERVER_ERROR, 
+                        format!("Security service error: {}", e)
+                    ),
+                }
             },
             ApiError::InternalError(msg) => {
                 error!("Internal server error: {}", msg);
