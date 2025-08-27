@@ -451,8 +451,10 @@ pub struct MaskedData {
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct TopicGuardRails {
     /// List of allowed topics that matched the content
+    #[serde(default)]
     pub allowed_topics: Vec<String>,
     /// List of blocked topics that matched the content
+    #[serde(default)]
     pub blocked_topics: Vec<String>,
 }
 
@@ -460,14 +462,16 @@ pub struct TopicGuardRails {
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct PromptDetectionDetails {
     /// Details about topic guardrail violations
-    pub topic_guardrails_details: TopicGuardRails,
+    #[serde(default)]
+    pub topic_guardrails_details: Option<TopicGuardRails>,
 }
 
 /// Detailed information about response threat detections.
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct ResponseDetectionDetails {
     /// Details about topic guardrail violations
-    pub topic_guardrails_details: TopicGuardRails,
+    #[serde(default)]
+    pub topic_guardrails_details: Option<TopicGuardRails>,
 }
 
 /// Security issues detected in an AI response during PANW assessment.
@@ -508,6 +512,8 @@ pub struct ResponseDetected {
     #[serde(default)]
     pub topic_violation: bool,
 }
+
+
 
 #[derive(Debug, thiserror::Error)]
 pub enum StreamError {

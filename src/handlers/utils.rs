@@ -138,14 +138,49 @@ pub fn format_security_violation_message(assessment: &crate::security::Assessmen
         reasons.join("\n - ")
     };
 
+    // Format topic guardrails information if available
+    let mut topic_info = String::new();
+    
+    // Check prompt topic guardrails
+    if let Some(ref details) = assessment.details.prompt_detection_details.topic_guardrails_details {
+        if !details.allowed_topics.is_empty() {
+            topic_info.push_str("\n• Allowed Topics:\n");
+            for topic in &details.allowed_topics {
+                topic_info.push_str(&format!("  - {}\n", topic));
+            }
+        }
+        if !details.blocked_topics.is_empty() {
+            topic_info.push_str("\n• Blocked Topics:\n");
+            for topic in &details.blocked_topics {
+                topic_info.push_str(&format!("  - {}\n", topic));
+            }
+        }
+    }
+
+    // Check response topic guardrails
+    if let Some(ref details) = assessment.details.response_detection_details.topic_guardrails_details {
+        if !details.allowed_topics.is_empty() {
+            topic_info.push_str("\n• Allowed Topics (Response):\n");
+            for topic in &details.allowed_topics {
+                topic_info.push_str(&format!("  - {}\n", topic));
+            }
+        }
+        if !details.blocked_topics.is_empty() {
+            topic_info.push_str("\n• Blocked Topics (Response):\n");
+            for topic in &details.blocked_topics {
+                topic_info.push_str(&format!("  - {}\n", topic));
+            }
+        }
+    }
+
     format!(
         "\n\n⚠️ This content was blocked due to security policy violations:\n\n\
          • Category: {}\n\
          • Action: {}\n\
          • Reasons: \n\
-          - {}\n\n\
+          - {}{}\n\
          Please reformulate your request to comply with security policies.\n\n",
-        assessment.category, assessment.action, reasons_text
+        assessment.category, assessment.action, reasons_text, topic_info
     )
 }
 
