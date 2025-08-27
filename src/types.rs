@@ -361,6 +361,10 @@ pub struct Metadata {
 
     /// Name of the AI model that generated or will process the content
     pub ai_model: String,
+
+    /// IP address of the end user using the AI application
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_ip: Option<String>,
 }
 
 /// Content to be assessed by the PANW AI Runtime security API.

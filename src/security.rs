@@ -110,6 +110,9 @@ pub struct SecurityClient {
 
     // Application user identifier
     app_user: String,
+
+    // IP address of the end user (optional)
+    user_ip: Option<String>,
 }
 
 impl Content {
@@ -230,12 +233,23 @@ impl SecurityClient {
             profile_name: profile_name.to_string(),
             app_name: app_name.to_string(),
             app_user: app_user.to_string(),
+            user_ip: None,
         }
     }
 
     //--------------------------------------------------------------------------
     // Public API Methods
     //--------------------------------------------------------------------------
+
+    /// Sets the user IP address for subsequent security assessments
+    ///
+    /// # Arguments
+    ///
+    /// * `ip` - The IP address of the end user making the request
+    pub fn with_user_ip(&mut self, ip: impl Into<String>) -> &mut Self {
+        self.user_ip = Some(ip.into());
+        self
+    }
 
     // Performs a security assessment on the provided content using PANW AI Runtime API.
     //
@@ -622,6 +636,7 @@ impl SecurityClient {
                 app_name: self.app_name.to_string(),
                 app_user: self.app_user.to_string(),
                 ai_model: model_name.to_string(),
+                user_ip: self.user_ip.clone(),
             },
             contents: vec![content_obj],
         }

@@ -15,8 +15,13 @@
 // - Support for both streaming and non-streaming response formats
 // - Consistent error handling and security violation reporting
 // - Transparent proxying of valid requests to Ollama backend
-use axum::{extract::State, response::Response, Json};
+use axum::{
+    extract::{ConnectInfo, State},
+    response::Response,
+    Json,
+};
 use bytes::Bytes;
+use std::net::SocketAddr;
 use tracing::{debug, error, info};
 
 use crate::handlers::utils::{
@@ -26,6 +31,7 @@ use crate::handlers::utils::{
 use crate::handlers::ApiError;
 use crate::types::{ChatRequest, ChatResponse, Message};
 use crate::AppState;
+use crate::security::SecurityClient;
 
 //------------------------------------------------------------------------------
 // Public API
@@ -49,6 +55,7 @@ use crate::AppState;
 // * `Ok(Response)` - The chat completion response
 // * `Err(ApiError)` - If an error occurs during processing
 pub async fn handle_chat(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(state): State<AppState>,
     Json(mut request): Json<ChatRequest>,
 ) -> Result<Response, ApiError> {
@@ -57,14 +64,19 @@ pub async fn handle_chat(
 
     info!("Received chat request for model: {}", request.model);
     debug!(
-        "Chat request details: stream={}, messages={}",
+        "Chat request details: stream={}, messages={}, client_ip={}",
         request.stream.unwrap(),
-        request.messages.len()
+        request.messages.len(),
+        addr.ip()
     );
+
+    // Configure security client with user's IP
+    let mut security_client = state.security_client.clone();
+    security_client.with_user_ip(addr.ip().to_string());
 
     // Security assessment: check all input messages for policy violations
     // and potentially replace with masked content
-    if let Err(response) = assess_chat_messages(&state, &mut request).await? {
+    if let Err(response) = assess_chat_messages(&security_client, &mut request).await? {
         return Ok(response);
     }
 
@@ -98,7 +110,7 @@ pub async fn handle_chat(
 // * `Ok(Err(Response))` - If security violation is detected, with appropriate response
 // * `Err(ApiError)` - If an error occurs during security assessment
 async fn assess_chat_messages(
-    state: &AppState,
+    security_client: &SecurityClient,
     request: &mut ChatRequest,
 ) -> Result<Result<(), Response>, ApiError> {
     let total_messages = request.messages.len();
@@ -111,8 +123,7 @@ async fn assess_chat_messages(
             message.role
         );
 
-        let assessment = state
-            .security_client
+        let assessment = security_client
             .assess_content(&message.content, &request.model, true)
             .await?;
 

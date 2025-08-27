@@ -48,6 +48,7 @@ use crate::security::SecurityClient;
 use axum::{
     routing::{get, post},
     Router,
+    extract::connect_info::IntoMakeServiceWithConnectInfo,
 };
 
 // Standard library imports
@@ -294,7 +295,10 @@ async fn start_server(
     info!("Server started successfully on {}", addr);
 
     info!("Waiting for incoming connections...");
-    axum::serve(listener, app).await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>()
+    ).await?;
 
     Ok(())
 }
