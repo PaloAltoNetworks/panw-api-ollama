@@ -114,8 +114,7 @@ async fn assess_chat_messages(
     request: &mut ChatRequest,
 ) -> Result<Result<(), Response>, ApiError> {
     let total_messages = request.messages.len();
-    for index in 0..total_messages {
-        let message = &mut request.messages[index];
+    for (index, message) in request.messages.iter_mut().enumerate() {
         debug!(
             "Assessing message {}/{}: role={}",
             index + 1,
