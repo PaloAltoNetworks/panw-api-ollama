@@ -624,7 +624,9 @@ impl SecurityClient {
             if scan_result.prompt_detected.dlp && !scan_result.prompt_masked_data.data.is_empty() {
                 // Use masked prompt content
                 (scan_result.prompt_masked_data.data.clone(), true)
-            } else if scan_result.response_detected.dlp && !scan_result.response_masked_data.data.is_empty() {
+            } else if scan_result.response_detected.dlp
+                && !scan_result.response_masked_data.data.is_empty()
+            {
                 // Use masked response content
                 (scan_result.response_masked_data.data.clone(), true)
             } else {
@@ -751,10 +753,11 @@ impl SecurityClient {
         // Handle error status codes based on OpenAPI specification
         if !status.is_success() {
             error!("PANW security assessment error: {} - {}", status, body_text);
-            
+
             // Parse error response if possible
             let error_details = match serde_json::from_str::<serde_json::Value>(&body_text) {
-                Ok(v) => v.pointer("/error/message")
+                Ok(v) => v
+                    .pointer("/error/message")
                     .and_then(|m| m.as_str())
                     .map(String::from)
                     .unwrap_or_else(|| body_text.clone()),
@@ -780,13 +783,14 @@ impl SecurityClient {
                                 Some((interval, unit.to_string()))
                             })
                         });
-                    
+
                     if let Some((interval, unit)) = retry_after {
                         Err(SecurityError::TooManyRequests(interval, unit))
                     } else {
-                        Err(SecurityError::TooManyRequests(60, "second".to_string())) // Default retry
+                        Err(SecurityError::TooManyRequests(60, "second".to_string()))
+                        // Default retry
                     }
-                },
+                }
                 _ => Err(SecurityError::AssessmentError(format!(
                     "Status {}: {}",
                     status, error_details

@@ -29,6 +29,7 @@ use crate::handlers::utils::{
     handle_streaming_request, log_llm_metrics,
 };
 use crate::handlers::ApiError;
+use crate::security::SecurityClient;
 use crate::types::{ChatRequest, ChatResponse, Message};
 use crate::AppState;
 use crate::security::SecurityClient;

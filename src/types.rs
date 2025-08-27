@@ -513,8 +513,6 @@ pub struct ResponseDetected {
     pub topic_violation: bool,
 }
 
-
-
 #[derive(Debug, thiserror::Error)]
 pub enum StreamError {
     #[error("Security assessment error: {0}")]
