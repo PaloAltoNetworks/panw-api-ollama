@@ -211,14 +211,12 @@ async fn handle_non_streaming_chat(
     let response = if assessment.is_masked {
         response_body.message.content = assessment.final_content;
         info!("Chat response passed security checks (with masked content), returning to client");
-        
-        // Create a cursor for direct writing to avoid intermediate allocations
-        let mut writer = Vec::new();
-        serde_json::to_writer(&mut writer, &response_body).map_err(|e| {
+
+        let json_bytes = serde_json::to_vec(&response_body).map_err(|e| {
             error!("Failed to serialize modified response: {}", e);
             ApiError::InternalError("Failed to serialize response".to_string())
         })?;
-        build_json_response(Bytes::from(writer))?
+        build_json_response(Bytes::from(json_bytes))?
     } else {
         info!("Chat response passed security checks, returning to client");
         build_json_response(body_bytes)?
@@ -248,12 +246,5 @@ async fn handle_streaming_chat(
 
     let model = request.model.clone();
     // For streaming chat, we're dealing with responses from the LLM, so is_prompt should be false
-    handle_streaming_request::<ChatRequest>(
-        &state,
-        request,
-        "/api/chat",
-        &model,
-        false,
-    )
-    .await
+    handle_streaming_request::<ChatRequest>(&state, request, "/api/chat", &model, false).await
 }
