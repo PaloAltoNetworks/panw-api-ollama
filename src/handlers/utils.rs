@@ -140,9 +140,13 @@ pub fn format_security_violation_message(assessment: &crate::security::Assessmen
 
     // Format topic guardrails information if available
     let mut topic_info = String::new();
-    
+
     // Check prompt topic guardrails
-    if let Some(ref details) = assessment.details.prompt_detection_details.topic_guardrails_details {
+    if let Some(ref details) = assessment
+        .details
+        .prompt_detection_details
+        .topic_guardrails_details
+    {
         if !details.allowed_topics.is_empty() {
             topic_info.push_str("\n• Allowed Topics:\n");
             for topic in &details.allowed_topics {
@@ -158,7 +162,11 @@ pub fn format_security_violation_message(assessment: &crate::security::Assessmen
     }
 
     // Check response topic guardrails
-    if let Some(ref details) = assessment.details.response_detection_details.topic_guardrails_details {
+    if let Some(ref details) = assessment
+        .details
+        .response_detection_details
+        .topic_guardrails_details
+    {
         if !details.allowed_topics.is_empty() {
             topic_info.push_str("\n• Allowed Topics (Response):\n");
             for topic in &details.allowed_topics {
@@ -179,7 +187,7 @@ pub fn format_security_violation_message(assessment: &crate::security::Assessmen
          • Action: {}\n\
          • Reasons: \n\
           - {}{}\n\
-         Please reformulate your request to comply with security policies.\n\n",
+         \n\nPlease reformulate your request to comply with security policies.\n\n",
         assessment.category, assessment.action, reasons_text, topic_info
     )
 }
@@ -197,25 +205,28 @@ where
 }
 
 /// Extract and log LLM performance metrics from JSON response data
-/// 
+///
 /// # Arguments
-/// 
+///
 /// * `json_data` - The JSON data potentially containing LLM metrics
 /// * `is_streaming` - Whether this is from a streaming response or not
-/// 
+///
 /// # Returns
-/// 
+///
 /// Returns true if metrics were found and logged, false otherwise
 pub fn log_llm_metrics(json_data: &serde_json::Value, is_streaming: bool) -> bool {
     let eval_metrics = [
         ("total_duration", json_data.get("total_duration")),
         ("load_duration", json_data.get("load_duration")),
         ("prompt_eval_count", json_data.get("prompt_eval_count")),
-        ("prompt_eval_duration", json_data.get("prompt_eval_duration")),
+        (
+            "prompt_eval_duration",
+            json_data.get("prompt_eval_duration"),
+        ),
         ("eval_count", json_data.get("eval_count")),
         ("eval_duration", json_data.get("eval_duration")),
     ];
-    
+
     let metrics_string: Vec<String> = eval_metrics
         .iter()
         .filter_map(|(name, value)| {
@@ -228,10 +239,18 @@ pub fn log_llm_metrics(json_data: &serde_json::Value, is_streaming: bool) -> boo
             })
         })
         .collect();
-    
+
     if !metrics_string.is_empty() {
-        let mode = if is_streaming { "streaming" } else { "non-streaming" };
-        info!("LLM {} performance metrics - {}", mode, metrics_string.join(", "));
+        let mode = if is_streaming {
+            "streaming"
+        } else {
+            "non-streaming"
+        };
+        info!(
+            "LLM {} performance metrics - {}",
+            mode,
+            metrics_string.join(", ")
+        );
         true
     } else {
         false

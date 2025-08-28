@@ -628,7 +628,7 @@ impl SecurityClient {
         let is_safe = scan_result.action != "block";
 
         // Determine if we have masked content to use - only apply masking for non-blocked content
-        let (final_content, is_masked) = if scan_result.action != "block" {
+        let (final_content, is_masked) = if is_safe {
             if scan_result.prompt_detected.dlp && !scan_result.prompt_masked_data.data.is_empty() {
                 // Use masked prompt content
                 (scan_result.prompt_masked_data.data.clone(), true)

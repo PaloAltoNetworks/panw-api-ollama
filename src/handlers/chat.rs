@@ -204,18 +204,20 @@ async fn handle_non_streaming_chat(
     }
 
     // If we have masked content, use it
-    if assessment.is_masked {
+    let output_bytes = if assessment.is_masked {
         response_body.message.content = assessment.final_content;
         info!("Chat response passed security checks (with masked content), returning to client");
-        let modified_bytes = serde_json::to_vec(&response_body).map_err(|e| {
-            error!("Failed to serialize modified response: {}", e);
-            ApiError::InternalError("Failed to serialize response".to_string())
-        })?;
-        Ok(build_json_response(Bytes::from(modified_bytes))?)
+        serde_json::to_vec(&response_body)
+            .map(Bytes::from)
+            .map_err(|e| {
+                error!("Failed to serialize modified response: {}", e);
+                ApiError::InternalError("Failed to serialize response".to_string())
+            })?
     } else {
         info!("Chat response passed security checks, returning to client");
-        Ok(build_json_response(body_bytes)?)
-    }
+        body_bytes
+    };
+    Ok(build_json_response(output_bytes)?)
 }
 
 // Handles streaming chat requests using the generic streaming handler.
