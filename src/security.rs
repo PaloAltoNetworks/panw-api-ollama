@@ -552,23 +552,26 @@ impl SecurityClient {
         // Use the builder pattern for creating content objects
         let builder = Content::builder();
 
-        let mut content_builder = if is_prompt {
-            let mut builder = builder.with_prompt(text_content);
-            if has_code {
-                builder = builder.with_code_prompt(code_blocks);
-            }
-            builder
-        } else {
-            let mut builder = builder.with_response(text_content);
-            if has_code {
-                builder = builder.with_code_response(code_blocks);
+        let content_builder = {
+            let mut builder = if is_prompt {
+                let mut b = builder.with_prompt(text_content);
+                if has_code {
+                    b = b.with_code_prompt(code_blocks);
+                }
+                b
+            } else {
+                let mut b = builder.with_response(text_content);
+                if has_code {
+                    b = b.with_code_response(code_blocks);
+                }
+                b
+            };
+
+            if !self.contextual_grounding_context.is_empty() {
+                builder.context = Some(self.contextual_grounding_context.clone());
             }
             builder
         };
-
-        if !self.contextual_grounding_context.is_empty() {
-            content_builder.context = Some(self.contextual_grounding_context.clone());
-        }
 
         content_builder
             .build()
