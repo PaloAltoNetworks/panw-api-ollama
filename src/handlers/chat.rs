@@ -178,18 +178,22 @@ async fn handle_non_streaming_chat(
         ApiError::InternalError("Failed to read response body".to_string())
     })?;
 
-    // Parse response
-    let mut response_body: ChatResponse = serde_json::from_slice(&body_bytes).map_err(|e| {
+    // Parse response once into Value
+    let json_value: serde_json::Value = serde_json::from_slice(&body_bytes).map_err(|e| {
         error!("Failed to parse response: {}", e);
         ApiError::InternalError("Failed to parse response".to_string())
     })?;
 
     debug!("Received response from Ollama, performing security assessment");
 
-    // Extract and log performance metrics if available
-    if let Ok(json) = serde_json::from_slice::<serde_json::Value>(&body_bytes) {
-        log_llm_metrics(&json, false);
-    }
+    // Extract and log performance metrics
+    log_llm_metrics(&json_value, false);
+
+    // Convert to ChatResponse
+    let mut response_body: ChatResponse = serde_json::from_value(json_value).map_err(|e| {
+        error!("Failed to convert response: {}", e);
+        ApiError::InternalError("Failed to convert response".to_string())
+    })?;
 
     // Security assessment on response content
     let assessment = state
@@ -204,20 +208,22 @@ async fn handle_non_streaming_chat(
     }
 
     // If we have masked content, use it
-    let output_bytes = if assessment.is_masked {
+    let response = if assessment.is_masked {
         response_body.message.content = assessment.final_content;
         info!("Chat response passed security checks (with masked content), returning to client");
-        serde_json::to_vec(&response_body)
-            .map(Bytes::from)
-            .map_err(|e| {
-                error!("Failed to serialize modified response: {}", e);
-                ApiError::InternalError("Failed to serialize response".to_string())
-            })?
+        
+        // Create a cursor for direct writing to avoid intermediate allocations
+        let mut writer = Vec::new();
+        serde_json::to_writer(&mut writer, &response_body).map_err(|e| {
+            error!("Failed to serialize modified response: {}", e);
+            ApiError::InternalError("Failed to serialize response".to_string())
+        })?;
+        build_json_response(Bytes::from(writer))?
     } else {
         info!("Chat response passed security checks, returning to client");
-        body_bytes
+        build_json_response(body_bytes)?
     };
-    Ok(build_json_response(output_bytes)?)
+    Ok(response)
 }
 
 // Handles streaming chat requests using the generic streaming handler.
