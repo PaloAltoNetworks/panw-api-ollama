@@ -47,23 +47,21 @@ impl StreamBuffer {
     /// Initializes all buffers as empty and sets default values for assessment
     /// parameters such as the assessment window size and sentence boundary characters.
     fn new() -> Self {
-        // Set initial capacity based on expected usage
-        // For text buffers: Use a fraction of assessment_window as initial capacity
-        // to balance between memory usage and avoiding frequent reallocations
-        let assessment_window = 100000;
-        let text_capacity = assessment_window / 10; // Start with 10% of max assessment window
-        let vec_capacity = 8; // Default small vector capacity for most collections
-
+        // Constants for buffer sizing optimization
+        const ASSESSMENT_WINDOW: usize = 100_000;
+        const TEXT_INITIAL_CAPACITY: usize = ASSESSMENT_WINDOW / 10; // 10% of max assessment window
+        const VEC_INITIAL_CAPACITY: usize = 8; // Default small vector capacity
+        
         Self {
-            text_buffer: String::with_capacity(text_capacity),
-            code_buffer: String::with_capacity(text_capacity),
+            text_buffer: String::with_capacity(TEXT_INITIAL_CAPACITY),
+            code_buffer: String::with_capacity(TEXT_INITIAL_CAPACITY),
             in_code_block: false,
             read_pos: 0,
-            output_buffer: Vec::with_capacity(vec_capacity),
-            text_buffer_complete: Vec::with_capacity(vec_capacity),
-            code_buffer_complete: Vec::with_capacity(vec_capacity),
-            pending_buffer: Vec::with_capacity(vec_capacity),
-            assessment_window,
+            output_buffer: Vec::with_capacity(VEC_INITIAL_CAPACITY),
+            text_buffer_complete: Vec::with_capacity(VEC_INITIAL_CAPACITY),
+            code_buffer_complete: Vec::with_capacity(VEC_INITIAL_CAPACITY),
+            pending_buffer: Vec::with_capacity(VEC_INITIAL_CAPACITY),
+            assessment_window: ASSESSMENT_WINDOW,
             sentence_boundary_chars: &['\n'],
             last_was_boundary: false,
             waiting_for_assessment: false,

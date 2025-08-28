@@ -471,8 +471,8 @@ impl SecurityClient {
     fn create_safe_assessment(&self) -> Assessment {
         Assessment {
             is_safe: true,
-            category: "benign".to_string(),
-            action: "allow".to_string(),
+            category: "benign".to_owned(),
+            action: "allow".to_owned(),
             final_content: String::new(),
             is_masked: false,
             details: ScanResponse::default_safe_response(),
