@@ -11,6 +11,9 @@ use std::{
     task::{Context, Poll},
 };
 
+// Type alias for complex assessment future to improve readability
+type AssessmentFuture = Pin<Box<dyn Future<Output = Result<Assessment, StreamError>> + Send>>;
+
 /// Buffer for stream content that handles parsing, accumulation, and code extraction.
 ///
 /// This struct maintains separate buffers for text and code content, tracks code block boundaries,
@@ -492,7 +495,7 @@ where
     security_client: SecurityClient,
     model_name: String,
     buffer: StreamBuffer,
-    assessment_fut: Option<Pin<Box<dyn Future<Output = Result<Assessment, StreamError>> + Send>>>,
+    assessment_fut: Option<AssessmentFuture>,
     finished: bool,
     retry_count: u32,
     is_prompt: bool,
@@ -553,7 +556,7 @@ fn create_security_assessment_future(
     security_client: &SecurityClient,
     model_name: &str,
     is_prompt: bool,
-) -> Pin<Box<dyn Future<Output = Result<Assessment, StreamError>> + Send>> {
+) -> AssessmentFuture {
     // Get the separate content buffers
     let text_content = buffer.text_buffer.clone();
     let code_content = buffer.code_buffer.clone();
@@ -635,9 +638,7 @@ where
     fn process_assessment_result(
         assessment: Assessment,
         buffer: &mut StreamBuffer,
-        assessment_fut: &mut Option<
-            Pin<Box<dyn Future<Output = Result<Assessment, StreamError>> + Send>>,
-        >,
+        assessment_fut: &mut Option<AssessmentFuture>,
         retry_count: &mut u32,
     ) -> Option<Result<Bytes, StreamError>> {
         // Important: Always clear the future after processing to avoid "resumed after completion" panic
@@ -693,9 +694,7 @@ where
     fn process_stream_chunk(
         bytes: Bytes,
         buffer: &mut StreamBuffer,
-        assessment_fut: &mut Option<
-            Pin<Box<dyn Future<Output = Result<Assessment, StreamError>> + Send>>,
-        >,
+        assessment_fut: &mut Option<AssessmentFuture>,
         security_client: &SecurityClient,
         model_name: &str,
         is_prompt: bool,
@@ -782,9 +781,7 @@ where
     /// Some(Result) if a final response should be sent, None if processing should continue
     fn process_stream_end(
         buffer: &mut StreamBuffer,
-        assessment_fut: &mut Option<
-            Pin<Box<dyn Future<Output = Result<Assessment, StreamError>> + Send>>,
-        >,
+        assessment_fut: &mut Option<AssessmentFuture>,
         security_client: &SecurityClient,
         model_name: &str,
         is_prompt: bool,
@@ -903,7 +900,7 @@ where
                         this.buffer,
                         this.assessment_fut,
                         this.security_client,
-                        &this.model_name,
+                        this.model_name,
                         *this.is_prompt,
                     );
 
@@ -928,7 +925,7 @@ where
                         this.buffer,
                         this.assessment_fut,
                         this.security_client,
-                        &this.model_name,
+                        this.model_name,
                         *this.is_prompt,
                     ) {
                         return Poll::Ready(Some(result));

@@ -4,7 +4,7 @@ use axum::{body::Body, response::Response};
 use bytes::Bytes;
 use futures_util::stream::StreamExt;
 use http_body_util::StreamBody;
-use serde::{de::DeserializeOwned, Serialize};
+use serde::Serialize;
 use tracing::{error, info};
 
 // Builds an HTTP response with JSON content type from the provided bytes.
@@ -21,7 +21,7 @@ fn convert_stream_error(err: reqwest::Error) -> reqwest::Error {
 }
 
 // Handles streaming requests to API endpoints, applying security assessment to the streamed responses.
-pub async fn handle_streaming_request<T, R>(
+pub async fn handle_streaming_request<T>(
     state: &AppState,
     request: T,
     endpoint: &str,
@@ -30,7 +30,6 @@ pub async fn handle_streaming_request<T, R>(
 ) -> Result<Response<Body>, ApiError>
 where
     T: Serialize + Send + 'static,
-    R: DeserializeOwned + Serialize + Send + Sync + Unpin + 'static,
 {
     // Get the original stream from ollama client
     let stream = state.ollama_client.stream(endpoint, &request).await?;
@@ -55,9 +54,7 @@ where
         Err(e) => {
             error!("Error in security assessment stream: {:?}", e);
             // Convert error to a user-friendly message
-            let error_message = match e {
-                _ => "Error processing response",
-            };
+            let error_message = "Error processing response";
             let error_json = serde_json::json!({
                 "model": model_string,
                 "error": error_message,

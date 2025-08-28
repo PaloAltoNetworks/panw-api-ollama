@@ -39,5 +39,5 @@ pub async fn handle_embeddings(
         .bytes()
         .await
         .map_err(|e| ApiError::InternalError(e.to_string()))?;
-    Ok(build_json_response(body_bytes)?)
+    build_json_response(body_bytes)
 }

@@ -149,7 +149,7 @@ async fn handle_non_streaming_generate(
     }
 
     // Return safe response
-    Ok(build_json_response(body_bytes)?)
+    build_json_response(body_bytes)
 }
 
 // Handles streaming generate requests.
@@ -171,7 +171,7 @@ async fn handle_streaming_generate(
 
     let model = request.model.clone();
     // For streaming generate, we're dealing with responses from the LLM, so is_prompt should be false
-    handle_streaming_request::<GenerateRequest, GenerateResponse>(
+    handle_streaming_request::<GenerateRequest>(
         &state,
         request,
         "/api/generate",

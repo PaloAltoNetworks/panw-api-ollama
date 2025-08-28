@@ -103,7 +103,7 @@ async fn forward_to_ollama<T: Serialize>(
         .bytes()
         .await
         .map_err(|e| ApiError::InternalError(e.to_string()))?;
-    Ok(build_json_response(body_bytes)?)
+    build_json_response(body_bytes)
 }
 
 // Handler for listing models (GET /api/tags)
