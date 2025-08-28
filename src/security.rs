@@ -232,6 +232,11 @@ impl ContentBuilder {
         self
     }
 
+    pub fn with_context(mut self, context: String) -> Self {
+        self.context = Some(context);
+        self
+    }
+
     // Builds the Content from the configured components.
     //
     // # Errors
@@ -568,7 +573,7 @@ impl SecurityClient {
             };
 
             if !self.contextual_grounding_context.is_empty() {
-                builder.context = Some(self.contextual_grounding_context.clone());
+                builder = builder.with_context(self.contextual_grounding_context.clone());
             }
             builder
         };
