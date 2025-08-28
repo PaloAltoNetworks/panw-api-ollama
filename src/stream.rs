@@ -1,7 +1,7 @@
 use crate::{
     handlers::utils::{format_security_violation_message, log_llm_metrics},
     security::{Assessment, SecurityClient},
-    types::StreamError,
+    types::{StreamError, Content},
 };
 use bytes::Bytes;
 use futures_util::{ready, Future, Stream};
@@ -10,22 +10,6 @@ use std::{
     pin::Pin,
     task::{Context, Poll},
 };
-
-/// A structure representing content for security assessment.
-///
-/// This struct holds both regular text and code content, either from prompts or responses.
-/// It allows the security assessment system to analyze different content types separately.
-#[allow(dead_code)]
-pub struct Content<'a> {
-    /// The text of a prompt to be assessed, if any
-    pub prompt: Option<&'a str>,
-    /// The text of a response to be assessed, if any
-    pub response: Option<&'a str>,
-    /// Code extracted from a prompt to be assessed, if any
-    pub code_prompt: Option<&'a str>,
-    /// Code extracted from a response to be assessed, if any
-    pub code_response: Option<&'a str>,
-}
 
 /// Buffer for stream content that handles parsing, accumulation, and code extraction.
 ///
@@ -237,7 +221,7 @@ impl StreamBuffer {
     /// # Returns
     ///
     /// A Content structure with the appropriate fields populated
-    fn prepare_assessment_content(&mut self, is_prompt: bool) -> Content<'_> {
+    fn prepare_assessment_content(&mut self, is_prompt: bool) -> Content {
         // Get only the new (unassessed) portions of the text and code buffers
         let new_text = if self.text_buffer.len() > self.last_assessed_text_pos {
             &self.text_buffer[self.last_assessed_text_pos..]
@@ -256,18 +240,20 @@ impl StreamBuffer {
         if is_prompt {
             // For prompt content
             Content {
-                prompt: Some(new_text),
+                prompt: Some(new_text.to_string()),
                 response: None,
-                code_prompt: if has_new_code { Some(new_code) } else { None },
+                code_prompt: if has_new_code { Some(new_code.to_string()) } else { None },
                 code_response: None,
+                context: None,
             }
         } else {
             // For response content
             Content {
                 prompt: None,
-                response: Some(new_text),
+                response: Some(new_text.to_string()),
                 code_prompt: None,
-                code_response: if has_new_code { Some(new_code) } else { None },
+                code_response: if has_new_code { Some(new_code.to_string()) } else { None },
+                context: None,
             }
         }
     }
@@ -284,7 +270,7 @@ impl StreamBuffer {
     /// # Returns
     ///
     /// Some(Content) if there is assessable content, None otherwise
-    fn get_assessable_chunk(&mut self, is_prompt: bool) -> Option<Content<'_>> {
+    fn get_assessable_chunk(&mut self, is_prompt: bool) -> Option<Content> {
         let new_text_content = self.text_buffer.len() > self.last_assessed_text_pos;
         let new_code_content = self.code_buffer.len() > self.last_assessed_code_pos;
 
