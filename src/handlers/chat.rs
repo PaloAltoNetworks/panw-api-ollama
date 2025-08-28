@@ -56,7 +56,7 @@ use crate::AppState;
 // * `Err(ApiError)` - If an error occurs during processing
 pub async fn handle_chat(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    State(mut state): State<AppState>,
+    State(state): State<AppState>,
     Json(mut request): Json<ChatRequest>,
 ) -> Result<Response, ApiError> {
     // Ensure stream parameter is always set
@@ -70,13 +70,13 @@ pub async fn handle_chat(
         addr.ip()
     );
 
-    // Configure security client with user's IP
-    let security_client = &mut state.security_client;
+    // Clone security client and configure with user's IP
+    let mut security_client = state.security_client.clone();
     security_client.with_user_ip(addr.ip().to_string());
-    
+
     // Security assessment: check all input messages for policy violations
     // and potentially replace with masked content
-    if let Err(response) = assess_chat_messages(security_client, &mut request).await? {
+    if let Err(response) = assess_chat_messages(&security_client, &mut request).await? {
         return Ok(response);
     }
 
