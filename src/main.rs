@@ -181,7 +181,8 @@ fn setup_logging(debug_level_str: &str) {
         .init();
 
     info!(
-        "Starting panw-api-ollama server with log level: {}",
+        "Starting panw-api-ollama v{} server with log level: {}",
+        env!("CARGO_PKG_VERSION"),
         debug_level
     );
 }
