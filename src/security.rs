@@ -801,7 +801,7 @@ impl SecurityClient {
                         Err(SecurityError::TooManyRequests(interval, unit))
                     } else {
                         Err(SecurityError::TooManyRequests(60, "second".to_string()))
-                        // Default retry
+                        // Default retry after 60 seconds if not specified
                     }
                 }
                 _ => Err(SecurityError::AssessmentError(format!(
