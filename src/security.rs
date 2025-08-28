@@ -267,15 +267,15 @@ impl SecurityClient {
     // * `profile_name` - Name of the AI security profile to use for assessments
     // * `app_name` - Name of the application using this security client
     // * `app_user` - Identifier for the user or context within the application
-    pub fn new(config: &SecurityConfig) -> Self {
+    pub fn new(config: SecurityConfig) -> Self {
         Self {
             client: Client::new(),
-            base_url: config.base_url.clone(),
-            api_key: config.api_key.clone(),
-            profile_name: config.profile_name.clone(),
-            app_name: config.app_name.clone(),
-            app_user: config.app_user.clone(),
-            contextual_grounding_context: config.contextual_grounding.clone(),
+            base_url: config.base_url,
+            api_key: config.api_key,
+            profile_name: config.profile_name,
+            app_name: config.app_name,
+            app_user: config.app_user,
+            contextual_grounding_context: config.contextual_grounding,
             user_ip: None,
         }
     }
@@ -283,6 +283,11 @@ impl SecurityClient {
     //--------------------------------------------------------------------------
     // Public API Methods
     //--------------------------------------------------------------------------
+
+    /// Returns the base URL of the security service
+    pub fn base_url(&self) -> &str {
+        &self.base_url
+    }
 
     /// Sets the user IP address for subsequent security assessments
     ///

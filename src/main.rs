@@ -136,7 +136,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     setup_logging(&config.server.debug_level);
 
     // Create application state
-    let state = build_app_state(&config)?;
+    let state = build_app_state(
+        config.ollama.base_url,
+        config.security
+    )?;
     info!("Application state initialized successfully");
 
     // Build router with all the Ollama API endpoints
@@ -196,22 +199,25 @@ fn setup_logging(debug_level_str: &str) {
 ///
 /// * `Ok(AppState)` - Initialized application state
 /// * `Err` - If client creation or initialization fails
-fn build_app_state(config: &config::Config) -> Result<AppState, Box<dyn std::error::Error>> {
+fn build_app_state(
+    ollama_base_url: String,
+    security_config: config::SecurityConfig
+) -> Result<AppState, Box<dyn std::error::Error>> {
     info!("Building application state with configured clients");
 
     // Create Ollama client
-    let ollama_client = OllamaClient::new(&config.ollama.base_url);
+    let ollama_client = OllamaClient::new(ollama_base_url.clone());
     info!(
         "Created Ollama client with base URL: {}",
-        config.ollama.base_url
+        ollama_base_url
     );
 
     // Create security client
-    let security_client = SecurityClient::new(&config.security);
+    let security_client = SecurityClient::new(security_config);
 
     info!(
         "Created security client with base URL: {}",
-        config.security.base_url
+        security_client.base_url()
     );
 
     // Build the application state using the builder pattern
