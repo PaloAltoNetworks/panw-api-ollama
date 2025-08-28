@@ -65,7 +65,7 @@ pub async fn handle_chat(
     info!("Received chat request for model: {}", request.model);
     debug!(
         "Chat request details: stream={}, messages={}, client_ip={}",
-        request.stream.unwrap(),
+        request.stream.unwrap_or(false),
         request.messages.len(),
         addr.ip()
     );
