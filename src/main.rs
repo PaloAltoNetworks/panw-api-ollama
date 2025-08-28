@@ -262,14 +262,12 @@ fn build_router(state: AppState) -> Router {
     let utility_routes = Router::new().route("/api/version", get(version::handle_version));
 
     // Combine all routes
-    let app = Router::new()
+    Router::new()
         .merge(generation_routes)
         .merge(model_routes)
         .merge(utility_routes)
         .layer(TraceLayer::new_for_http())
-        .with_state(state);
-
-    app
+        .with_state(state)
 }
 
 /// Starts the HTTP server with the configured router.

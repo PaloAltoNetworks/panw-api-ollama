@@ -13,5 +13,5 @@ pub async fn handle_version(State(state): State<AppState>) -> Result<Response, A
         .await
         .map_err(|e| ApiError::InternalError(e.to_string()))?;
 
-    Ok(build_json_response(body_bytes)?)
+    build_json_response(body_bytes)
 }

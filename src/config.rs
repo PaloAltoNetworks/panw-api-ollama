@@ -24,6 +24,7 @@ use tracing::{debug, info};
 /// configuration, including file access errors, YAML parsing issues,
 /// and validation of configuration values.
 #[derive(Debug, Error)]
+#[allow(clippy::enum_variant_names)]
 pub enum ConfigError {
     /// File I/O errors when reading the configuration file
     #[error("Failed to read config file: {0}")]
@@ -31,7 +32,7 @@ pub enum ConfigError {
 
     /// YAML parsing errors in the configuration file
     #[error("Failed to parse config file: {0}")]
-    ParseError(#[from] serde_yaml::Error),
+    ParseError(#[from] serde_yml::Error),
 
     /// Configuration validation errors
     #[error("Validation error: {0}")]
@@ -177,7 +178,7 @@ pub fn load_config(path: &str) -> Result<Config, ConfigError> {
         debug!("Successfully read configuration file");
 
         // Parse YAML
-        let mut config: Config = serde_yaml::from_str(&content)?;
+        let mut config: Config = serde_yml::from_str(&content)?;
         debug!("Successfully parsed YAML configuration");
 
         // Override with environment variables if present

@@ -20,6 +20,7 @@ pub mod version;
 // security assessment, and internal server issues into a unified error type
 // that can be converted into appropriate HTTP responses.
 #[derive(Debug, thiserror::Error)]
+#[allow(clippy::enum_variant_names)]
 pub enum ApiError {
     // Errors from the Ollama backend service.
     //

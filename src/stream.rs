@@ -11,6 +11,9 @@ use std::{
     task::{Context, Poll},
 };
 
+// Type alias for complex assessment future to improve readability
+type AssessmentFuture = Pin<Box<dyn Future<Output = Result<Assessment, StreamError>> + Send>>;
+
 /// Buffer for stream content that handles parsing, accumulation, and code extraction.
 ///
 /// This struct maintains separate buffers for text and code content, tracks code block boundaries,
@@ -44,23 +47,21 @@ impl StreamBuffer {
     /// Initializes all buffers as empty and sets default values for assessment
     /// parameters such as the assessment window size and sentence boundary characters.
     fn new() -> Self {
-        // Set initial capacity based on expected usage
-        // For text buffers: Use a fraction of assessment_window as initial capacity
-        // to balance between memory usage and avoiding frequent reallocations
-        let assessment_window = 100000;
-        let text_capacity = assessment_window / 10; // Start with 10% of max assessment window
-        let vec_capacity = 8; // Default small vector capacity for most collections
-
+        // Constants for buffer sizing optimization
+        const ASSESSMENT_WINDOW: usize = 100_000;
+        const TEXT_INITIAL_CAPACITY: usize = ASSESSMENT_WINDOW / 10; // 10% of max assessment window
+        const VEC_INITIAL_CAPACITY: usize = 8; // Default small vector capacity
+        
         Self {
-            text_buffer: String::with_capacity(text_capacity),
-            code_buffer: String::with_capacity(text_capacity),
+            text_buffer: String::with_capacity(TEXT_INITIAL_CAPACITY),
+            code_buffer: String::with_capacity(TEXT_INITIAL_CAPACITY),
             in_code_block: false,
             read_pos: 0,
-            output_buffer: Vec::with_capacity(vec_capacity),
-            text_buffer_complete: Vec::with_capacity(vec_capacity),
-            code_buffer_complete: Vec::with_capacity(vec_capacity),
-            pending_buffer: Vec::with_capacity(vec_capacity),
-            assessment_window,
+            output_buffer: Vec::with_capacity(VEC_INITIAL_CAPACITY),
+            text_buffer_complete: Vec::with_capacity(VEC_INITIAL_CAPACITY),
+            code_buffer_complete: Vec::with_capacity(VEC_INITIAL_CAPACITY),
+            pending_buffer: Vec::with_capacity(VEC_INITIAL_CAPACITY),
+            assessment_window: ASSESSMENT_WINDOW,
             sentence_boundary_chars: &['\n'],
             last_was_boundary: false,
             waiting_for_assessment: false,
@@ -492,7 +493,7 @@ where
     security_client: SecurityClient,
     model_name: String,
     buffer: StreamBuffer,
-    assessment_fut: Option<Pin<Box<dyn Future<Output = Result<Assessment, StreamError>> + Send>>>,
+    assessment_fut: Option<AssessmentFuture>,
     finished: bool,
     retry_count: u32,
     is_prompt: bool,
@@ -553,7 +554,7 @@ fn create_security_assessment_future(
     security_client: &SecurityClient,
     model_name: &str,
     is_prompt: bool,
-) -> Pin<Box<dyn Future<Output = Result<Assessment, StreamError>> + Send>> {
+) -> AssessmentFuture {
     // Get the separate content buffers
     let text_content = buffer.text_buffer.clone();
     let code_content = buffer.code_buffer.clone();
@@ -635,9 +636,7 @@ where
     fn process_assessment_result(
         assessment: Assessment,
         buffer: &mut StreamBuffer,
-        assessment_fut: &mut Option<
-            Pin<Box<dyn Future<Output = Result<Assessment, StreamError>> + Send>>,
-        >,
+        assessment_fut: &mut Option<AssessmentFuture>,
         retry_count: &mut u32,
     ) -> Option<Result<Bytes, StreamError>> {
         // Important: Always clear the future after processing to avoid "resumed after completion" panic
@@ -693,9 +692,7 @@ where
     fn process_stream_chunk(
         bytes: Bytes,
         buffer: &mut StreamBuffer,
-        assessment_fut: &mut Option<
-            Pin<Box<dyn Future<Output = Result<Assessment, StreamError>> + Send>>,
-        >,
+        assessment_fut: &mut Option<AssessmentFuture>,
         security_client: &SecurityClient,
         model_name: &str,
         is_prompt: bool,
@@ -782,9 +779,7 @@ where
     /// Some(Result) if a final response should be sent, None if processing should continue
     fn process_stream_end(
         buffer: &mut StreamBuffer,
-        assessment_fut: &mut Option<
-            Pin<Box<dyn Future<Output = Result<Assessment, StreamError>> + Send>>,
-        >,
+        assessment_fut: &mut Option<AssessmentFuture>,
         security_client: &SecurityClient,
         model_name: &str,
         is_prompt: bool,
@@ -903,7 +898,7 @@ where
                         this.buffer,
                         this.assessment_fut,
                         this.security_client,
-                        &this.model_name,
+                        this.model_name,
                         *this.is_prompt,
                     );
 
@@ -928,7 +923,7 @@ where
                         this.buffer,
                         this.assessment_fut,
                         this.security_client,
-                        &this.model_name,
+                        this.model_name,
                         *this.is_prompt,
                     ) {
                         return Poll::Ready(Some(result));

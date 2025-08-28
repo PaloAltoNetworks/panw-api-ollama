@@ -248,7 +248,7 @@ async fn handle_streaming_chat(
 
     let model = request.model.clone();
     // For streaming chat, we're dealing with responses from the LLM, so is_prompt should be false
-    handle_streaming_request::<ChatRequest, ChatResponse>(
+    handle_streaming_request::<ChatRequest>(
         &state,
         request,
         "/api/chat",

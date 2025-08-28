@@ -22,6 +22,7 @@ use tracing::{debug, error};
 // This enum represents various failure modes when communicating with
 // Ollama services, including network issues and API-level errors.
 #[derive(Debug, Error)]
+#[allow(clippy::enum_variant_names)]
 pub enum OllamaError {
     // HTTP request errors (connection failures, timeouts, etc.)
     #[error("HTTP request failed: {0}")]
