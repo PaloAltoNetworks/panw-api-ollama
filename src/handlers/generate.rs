@@ -148,7 +148,21 @@ async fn handle_non_streaming_generate(
         return build_violation_response(response_body);
     }
 
-    // Return safe response
+    // If the response was allowed but PANW provided masked content, use it
+    if assessment.is_masked {
+        debug!("Using masked content for generate response");
+
+        response_body.response = assessment.final_content;
+
+        let json_bytes = serde_json::to_vec(&response_body).map_err(|e| {
+            error!("Failed to serialize modified response: {}", e);
+            ApiError::InternalError("Failed to serialize response".to_string())
+        })?;
+
+        return build_json_response(json_bytes.into());
+    }
+
+    // Return original (safe) response
     build_json_response(body_bytes)
 }
 

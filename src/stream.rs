@@ -662,6 +662,31 @@ where
             return None;
         }
 
+        // If the assessment indicates masking, replace the pending buffer with the masked content
+        if assessment.is_masked {
+            // Clear existing pending chunks
+            buffer.pending_buffer.clear();
+
+            // Build a single masked JSON object and return it as the only chunk.
+            // Add a trailing newline to make NDJSON consumers happier.
+            let masked_json = serde_json::json!({
+                "created_at": chrono::Utc::now().to_rfc3339(),
+                "done": true,
+                "message": { "content": assessment.final_content, "role": "assistant" }
+            });
+
+            let mut vec = serde_json::to_vec(&masked_json).unwrap_or_else(|_| assessment.final_content.clone().into_bytes());
+            vec.push(b'\n');
+            let bytes = Bytes::from(vec);
+
+            // Mark the buffer as blocked/finished so no further inner stream data is processed
+            buffer.waiting_for_assessment = false;
+            buffer.accumulating = false;
+            buffer.blocked = true;
+
+            return Some(Ok(bytes));
+        }
+
         // Mark the content as safe by updating the read position and clearing code buffer
         buffer.commit(true);
 
