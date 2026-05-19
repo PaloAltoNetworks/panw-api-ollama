@@ -248,7 +248,10 @@ fn build_router(state: AppState) -> Router {
     let generation_routes = Router::new()
         .route("/api/generate", post(generate::handle_generate))
         .route("/api/chat", post(chat::handle_chat))
-        .route("/api/embeddings", post(embeddings::handle_embeddings));
+        .route("/api/embeddings", post(embeddings::handle_embeddings))
+        // /api/embed is the newer Ollama embeddings endpoint; accepts
+        // either a single string or an array of strings.
+        .route("/api/embed", post(embeddings::handle_embed));
 
     let model_routes = Router::new()
         .route("/api/tags", get(models::handle_list_models))
@@ -257,7 +260,9 @@ fn build_router(state: AppState) -> Router {
         .route("/api/copy", post(models::handle_copy_model))
         .route("/api/delete", post(models::handle_delete_model))
         .route("/api/pull", post(models::handle_pull_model))
-        .route("/api/push", post(models::handle_push_model));
+        .route("/api/push", post(models::handle_push_model))
+        // /api/ps reports running models; pure passthrough, no scan needed.
+        .route("/api/ps", get(models::handle_running_models));
 
     let utility_routes = Router::new().route("/api/version", get(version::handle_version));
 
