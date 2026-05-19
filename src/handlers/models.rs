@@ -25,6 +25,7 @@ pub enum OllamaEndpoint {
     Delete,
     Pull,
     Push,
+    Ps,
 }
 
 impl OllamaEndpoint {
@@ -38,13 +39,14 @@ impl OllamaEndpoint {
             Self::Delete => "/api/delete",
             Self::Pull => "/api/pull",
             Self::Push => "/api/push",
+            Self::Ps => "/api/ps",
         }
     }
 
     // Returns the HTTP method for the endpoint.
     fn method(&self) -> Method {
         match self {
-            Self::Tags => Method::GET,
+            Self::Tags | Self::Ps => Method::GET,
             _ => Method::POST,
         }
     }
@@ -59,6 +61,7 @@ impl OllamaEndpoint {
             Self::Delete => "Forwarding delete model request for",
             Self::Pull => "Forwarding pull model request for",
             Self::Push => "Forwarding push model request for",
+            Self::Ps => "Forwarding running-models (ps) request",
         }
     }
 
@@ -109,6 +112,15 @@ async fn forward_to_ollama<T: Serialize>(
 // Handler for listing models (GET /api/tags)
 pub async fn handle_list_models(State(state): State<AppState>) -> Result<Response, ApiError> {
     forward_to_ollama::<()>(&state, OllamaEndpoint::Tags, None, None).await
+}
+
+// Handler for listing currently-running models (GET /api/ps).
+//
+// Mirrors the upstream Ollama endpoint that reports models loaded in
+// memory along with their VRAM footprint. Pure passthrough: no scan
+// applies because the response contains no user prompts or model output.
+pub async fn handle_running_models(State(state): State<AppState>) -> Result<Response, ApiError> {
+    forward_to_ollama::<()>(&state, OllamaEndpoint::Ps, None, None).await
 }
 
 // Handler for showing model details (POST /api/show)
