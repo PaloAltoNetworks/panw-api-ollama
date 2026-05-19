@@ -827,9 +827,17 @@ impl SecurityClient {
         }
 
         // Parse JSON response
-        serde_json::from_str(&body_text).map_err(|e| {
+        let resp: ScanResponse = serde_json::from_str(&body_text).map_err(|e| {
             error!("Failed to parse PANW security assessment response: {}", e);
             SecurityError::JsonError(e)
-        })
+        })?;
+
+        // Spec-required field validation. v0.16: warn-on-default for `report_id`/`scan_id`,
+        // hard-fail on `category`/`action`. v0.17 will hard-fail on all four.
+        if let Err(reason) = resp.validate_required() {
+            error!("Invalid PANW response: {}", reason);
+            return Err(SecurityError::AssessmentError(reason));
+        }
+        Ok(resp)
     }
 }
