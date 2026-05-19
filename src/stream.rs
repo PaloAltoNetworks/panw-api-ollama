@@ -588,28 +588,29 @@ fn create_security_assessment_future(
     model_name: &str,
     is_prompt: bool,
 ) -> AssessmentFuture {
-    // Get the separate content buffers
-    let text_content = buffer.text_buffer.clone();
-    let code_content = buffer.code_buffer.clone();
-
-    // Clone what we need for the async block
     let client = security_client.clone();
     let model = model_name.to_string();
+    // Decide which path to take BEFORE allocating the second buffer copy:
+    // when there is no code content the future does not need the empty
+    // `code_buffer` and the heap copy is pointless.
+    let has_code = !buffer.code_buffer.is_empty();
+    let text_content = buffer.text_buffer.clone();
+    let code_content = if has_code {
+        Some(buffer.code_buffer.clone())
+    } else {
+        None
+    };
 
-    // Create assessment future with appropriate content based on what we have
     Box::pin(async move {
-        // If we have code content, include it in the assessment
-        if !code_content.is_empty() {
-            client
-                .assess_content_with_code(&text_content, &code_content, &model, is_prompt)
+        match code_content {
+            Some(code) => client
+                .assess_content_with_code(&text_content, &code, &model, is_prompt)
                 .await
-                .map_err(|e| StreamError::SecurityError(e.to_string()))
-        } else {
-            // Otherwise just assess the text
-            client
+                .map_err(|e| StreamError::SecurityError(e.to_string())),
+            None => client
                 .assess_content(&text_content, &model, is_prompt)
                 .await
-                .map_err(|e| StreamError::SecurityError(e.to_string()))
+                .map_err(|e| StreamError::SecurityError(e.to_string())),
         }
     })
 }
