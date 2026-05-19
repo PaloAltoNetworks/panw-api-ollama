@@ -60,10 +60,52 @@ impl IntoResponse for ApiError {
         let (status, error_message) = match self {
             ApiError::OllamaError(e) => {
                 error!("Ollama service error: {}", e);
-                (
-                    StatusCode::BAD_GATEWAY,
-                    "Upstream Ollama service unavailable.".to_string(),
-                )
+                // Map upstream Ollama outcomes to client-facing status codes
+                // WITHOUT leaking URLs, hostnames, or reqwest internals. Only
+                // the upstream HTTP status code is reflected through; the
+                // body is always a stable generic message.
+                match &e {
+                    // Upstream returned a structured error: surface its
+                    // status class so clients can distinguish 404 (request
+                    // fix) from 5xx (retry-friendly).
+                    crate::ollama::OllamaError::ApiError { status, .. } => match status.as_u16() {
+                        404 => (
+                            StatusCode::NOT_FOUND,
+                            "Model not found on upstream Ollama.".to_string(),
+                        ),
+                        s if (400..500).contains(&s) => (
+                            // Reflect the upstream client-error status (e.g.
+                            // 400 bad request, 413 payload too large) but
+                            // keep the body generic.
+                            StatusCode::from_u16(s).unwrap_or(StatusCode::BAD_REQUEST),
+                            "Ollama rejected the request.".to_string(),
+                        ),
+                        _ => (
+                            StatusCode::BAD_GATEWAY,
+                            "Upstream Ollama service error.".to_string(),
+                        ),
+                    },
+                    // Network-level failure (DNS, connect, timeout). Treat
+                    // as a transient infrastructure problem so the client
+                    // can decide whether to retry.
+                    crate::ollama::OllamaError::RequestError(req_err) => {
+                        if req_err.is_timeout() || req_err.is_connect() {
+                            (
+                                StatusCode::SERVICE_UNAVAILABLE,
+                                "Upstream Ollama unreachable.".to_string(),
+                            )
+                        } else {
+                            (
+                                StatusCode::BAD_GATEWAY,
+                                "Upstream Ollama service unavailable.".to_string(),
+                            )
+                        }
+                    }
+                    crate::ollama::OllamaError::ConfigError(_) => (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "Ollama client misconfigured.".to_string(),
+                    ),
+                }
             }
             ApiError::SecurityError(e) => {
                 error!("Security assessment error: {}", e);
@@ -159,17 +201,53 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn ollama_error_does_not_leak_upstream_detail() {
-        // ApiError::OllamaError wraps OllamaError; construct an ApiError of
-        // that variant via OllamaError::ApiError which carries leaky fields.
+    async fn ollama_404_returns_404_without_leaking_upstream_detail() {
+        // Upstream 404 (model not found) deserves its own status code so
+        // clients can distinguish a request-fix problem from a retry-friendly
+        // one. The leaky message must not appear in the body.
         let leaky = ApiError::OllamaError(crate::ollama::OllamaError::ApiError {
             status: reqwest::StatusCode::NOT_FOUND,
             message: "model 'super-secret-internal-name' not found at 10.0.0.5:11434".into(),
         });
         let (status, msg, _) = render(leaky).await;
-        assert_eq!(status, StatusCode::BAD_GATEWAY);
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert!(msg.contains("Model not found"));
         assert!(!msg.contains("super-secret-internal-name"));
         assert!(!msg.contains("10.0.0.5"));
+    }
+
+    #[tokio::test]
+    async fn ollama_4xx_reflects_status_with_generic_body() {
+        let leaky = ApiError::OllamaError(crate::ollama::OllamaError::ApiError {
+            status: reqwest::StatusCode::PAYLOAD_TOO_LARGE,
+            message: "request body too large at internal-host:11434".into(),
+        });
+        let (status, msg, _) = render(leaky).await;
+        assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
+        assert!(msg.contains("Ollama rejected"));
+        assert!(!msg.contains("internal-host"));
+    }
+
+    #[tokio::test]
+    async fn ollama_5xx_collapses_to_502_without_leaking_detail() {
+        let leaky = ApiError::OllamaError(crate::ollama::OllamaError::ApiError {
+            status: reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+            message: "panic at line 42 of /opt/ollama/internal.rs".into(),
+        });
+        let (status, msg, _) = render(leaky).await;
+        assert_eq!(status, StatusCode::BAD_GATEWAY);
+        assert!(msg.contains("Upstream Ollama"));
+        assert!(!msg.contains("internal.rs"));
+    }
+
+    #[tokio::test]
+    async fn ollama_config_error_returns_500() {
+        let leaky = ApiError::OllamaError(crate::ollama::OllamaError::ConfigError(
+            "missing CA bundle at /opt/secret-path".into(),
+        ));
+        let (status, msg, _) = render(leaky).await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert!(!msg.contains("/opt/secret-path"));
     }
 
     #[tokio::test]
