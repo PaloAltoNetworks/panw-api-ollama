@@ -1020,3 +1020,64 @@ where
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn over_cap_triggers_at_threshold() {
+        let mut b = StreamBuffer::new();
+        b.text_buffer = "x".repeat(HARD_CAP_BYTES + 1);
+        assert!(b.over_cap());
+
+        let mut b2 = StreamBuffer::new();
+        b2.text_buffer = "x".repeat(HARD_CAP_BYTES / 2 + 1);
+        b2.code_buffer = "y".repeat(HARD_CAP_BYTES / 2 + 1);
+        assert!(b2.over_cap());
+
+        let mut b3 = StreamBuffer::new();
+        b3.text_buffer = "x".repeat(100);
+        assert!(!b3.over_cap());
+    }
+
+    #[test]
+    fn has_unassessed_content_reflects_positions() {
+        let mut b = StreamBuffer::new();
+        assert!(!b.has_unassessed_content());
+        b.text_buffer = "hello".to_string();
+        assert!(b.has_unassessed_content());
+        b.last_assessed_text_pos = b.text_buffer.len();
+        assert!(!b.has_unassessed_content());
+        b.code_buffer = "fn x() {}".to_string();
+        assert!(b.has_unassessed_content());
+    }
+
+    #[test]
+    fn detect_code_blocks_toggles_state_on_fence() {
+        let mut b = StreamBuffer::new();
+        b.text_buffer = "before```after".to_string();
+        b.detect_code_blocks();
+        assert!(b.in_code_block);
+    }
+
+    #[test]
+    fn process_appends_text_content() {
+        // process() parses Ollama's NDJSON wire format and routes message.content into
+        // the buffers. (Pre-existing quirk: the in_code_block toggle in process() lags
+        // by one fence boundary; detect_code_blocks() is what actually reconciles state.
+        // We assert here only the basics to lock the existing routing contract.)
+        let mut b = StreamBuffer::new();
+        b.process(r#"{"message":{"content":"hello "}}"#);
+        b.process(r#"{"message":{"content":"world"}}"#);
+        assert!(b.text_buffer.contains("hello"));
+        assert!(b.text_buffer.contains("world"));
+    }
+
+    #[test]
+    fn process_ignores_non_json_chunks() {
+        let mut b = StreamBuffer::new();
+        b.process("not-json");
+        assert!(b.text_buffer.is_empty());
+        assert!(b.code_buffer.is_empty());
+    }
+}

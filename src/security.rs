@@ -841,3 +841,111 @@ impl SecurityClient {
         Ok(resp)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn client() -> SecurityClient {
+        SecurityClient::new(SecurityConfig {
+            base_url: "https://example.invalid".into(),
+            api_key: "test".into(),
+            profile_name: "p".into(),
+            app_name: "test".into(),
+            app_user: "u".into(),
+            contextual_grounding: String::new(),
+        })
+    }
+
+    #[test]
+    fn extract_code_blocks_basic() {
+        let c = client();
+        let s = "before\n```\ncode\n```\nafter\n";
+        let extracted = c.extract_code_blocks(s);
+        assert!(extracted.contains("code"));
+        assert!(!extracted.contains("before"));
+        assert!(!extracted.contains("after"));
+    }
+
+    #[test]
+    fn extract_code_blocks_with_language_marker() {
+        let c = client();
+        let s = "```rust\nlet x = 1;\n```\n";
+        let extracted = c.extract_code_blocks(s);
+        assert!(extracted.contains("let x = 1;"));
+        assert!(!extracted.contains("rust"));
+    }
+
+    #[test]
+    fn extract_code_blocks_unclosed_fence() {
+        let c = client();
+        let s = "intro\n```\nleak\nsecret\n";
+        let extracted = c.extract_code_blocks(s);
+        // Unclosed fence: trailing content captured as code (current behavior).
+        assert!(extracted.contains("leak"));
+    }
+
+    #[test]
+    fn extract_code_blocks_empty_input() {
+        let c = client();
+        assert_eq!(c.extract_code_blocks(""), "");
+    }
+
+    #[test]
+    fn extract_code_blocks_no_fences() {
+        let c = client();
+        assert_eq!(c.extract_code_blocks("plain text\nno code\n"), "");
+    }
+
+    #[test]
+    fn remove_code_blocks_strips_fences() {
+        let c = client();
+        let s = "before\n```\nsecret\n```\nafter\n";
+        let stripped = c.remove_code_blocks(s);
+        assert!(stripped.contains("before"));
+        assert!(stripped.contains("after"));
+        assert!(!stripped.contains("secret"));
+    }
+
+    #[tokio::test]
+    async fn assess_content_skips_empty() {
+        let c = client();
+        let r = c.assess_content("", "llama3", true).await.unwrap();
+        assert!(r.is_safe);
+        assert_eq!(r.action, "allow");
+    }
+
+    #[test]
+    fn process_scan_result_blocked_does_not_emit_masked_content() {
+        let c = client();
+        let mut resp = ScanResponse::default_safe_response();
+        resp.action = "block".into();
+        resp.category = "malicious".into();
+        resp.prompt_detected.dlp = true;
+        resp.prompt_masked_data.data = "should-not-leak".into();
+        let a = c.process_scan_result(resp).unwrap();
+        assert!(!a.is_safe);
+        assert!(!a.is_masked);
+        assert!(a.final_content.is_empty());
+    }
+
+    #[test]
+    fn process_scan_result_safe_with_dlp_masks() {
+        let c = client();
+        let mut resp = ScanResponse::default_safe_response();
+        resp.prompt_detected.dlp = true;
+        resp.prompt_masked_data.data = "Email: ***@x.com".into();
+        let a = c.process_scan_result(resp).unwrap();
+        assert!(a.is_safe);
+        assert!(a.is_masked);
+        assert_eq!(a.final_content, "Email: ***@x.com");
+    }
+
+    #[test]
+    fn content_builder_requires_at_least_one_field() {
+        let r = Content::builder().build();
+        assert!(r.is_err());
+        let r = Content::builder().with_prompt("p".into()).build();
+        assert!(r.is_ok());
+    }
+}

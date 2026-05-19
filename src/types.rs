@@ -757,3 +757,88 @@ pub enum StreamError {
     NetworkError(String),
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scan_response_minimal_decodes() {
+        let json = include_str!("../tests/fixtures/scan_response_minimal.json");
+        let r: ScanResponse = serde_json::from_str(json).expect("minimal scan response");
+        assert_eq!(r.report_id, "R-1");
+        assert_eq!(r.category, "benign");
+        assert_eq!(r.action, "allow");
+        assert!(!r.prompt_detected.dlp);
+        assert!(!r.prompt_detected.injection);
+    }
+
+    #[test]
+    fn scan_response_blocked_decodes() {
+        let json = include_str!("../tests/fixtures/scan_response_blocked.json");
+        let r: ScanResponse = serde_json::from_str(json).expect("blocked scan response");
+        assert_eq!(r.action, "block");
+        assert_eq!(r.category, "malicious");
+        assert!(r.prompt_detected.injection);
+    }
+
+    #[test]
+    fn scan_response_dlp_masked_decodes() {
+        let json = include_str!("../tests/fixtures/scan_response_dlp_masked.json");
+        let r: ScanResponse = serde_json::from_str(json).expect("dlp masked scan response");
+        assert!(r.prompt_detected.dlp);
+        assert!(!r.prompt_masked_data.data.is_empty());
+        assert_eq!(r.prompt_masked_data.pattern_detections.len(), 1);
+        assert_eq!(r.prompt_masked_data.pattern_detections[0].pattern, "EMAIL");
+    }
+
+    #[test]
+    fn scan_response_with_new_fields_decodes() {
+        // Pre-P0-5 baseline: code does NOT model `source`, `session_id`, `tool_detected`,
+        // `errors`, `timeout`, `error`, `toxic_content_details`. Verify current behavior:
+        // unknown fields are ignored, response decodes successfully.
+        let json = include_str!("../tests/fixtures/scan_response_with_new_fields.json");
+        let r: ScanResponse = serde_json::from_str(json).expect("new-fields scan response");
+        assert_eq!(r.report_id, "R-4");
+    }
+
+    #[test]
+    fn default_safe_response_is_safe() {
+        let r = ScanResponse::default_safe_response();
+        assert_eq!(r.action, "allow");
+        assert_eq!(r.category, "benign");
+    }
+
+    #[test]
+    fn chat_request_without_stream_field_decodes_to_none() {
+        let json = r#"{"model":"llama3","messages":[{"role":"user","content":"hi"}]}"#;
+        let r: ChatRequest = serde_json::from_str(json).unwrap();
+        // Default behavior: stream omitted => None; handlers must default to true.
+        assert_eq!(r.stream, None);
+        assert!(r.stream.unwrap_or(true));
+    }
+
+    #[test]
+    fn generate_request_without_stream_field_decodes_to_none() {
+        let json = r#"{"model":"llama3","prompt":"hi"}"#;
+        let r: GenerateRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(r.stream, None);
+        assert!(r.stream.unwrap_or(true));
+    }
+
+    #[test]
+    fn generate_request_serializes_optional_stream() {
+        let req = GenerateRequest {
+            model: "llama3".into(),
+            prompt: "hi".into(),
+            system: None,
+            template: None,
+            context: None,
+            stream: None,
+            raw: None,
+            format: None,
+            options: None,
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        assert!(!json.contains("\"stream\""), "None stream must be skipped: {}", json);
+    }
+}

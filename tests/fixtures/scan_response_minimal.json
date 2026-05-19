@@ -1,0 +1,9 @@
+{
+  "report_id": "R-1",
+  "scan_id": "11111111-1111-1111-1111-111111111111",
+  "category": "benign",
+  "action": "allow",
+  "timeout": false,
+  "error": false,
+  "errors": []
+}
