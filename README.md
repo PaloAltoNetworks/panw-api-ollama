@@ -30,6 +30,27 @@ The best part? It's completely transparent to your existing setup - [Ollama](htt
 - **Protect adversarial input**: Safeguard AI agents from malicious inputs and outputs while maintaining workflow flexibility.
 - **Prevent sensitive data leakage**: Use API-based threat detection to block sensitive data leaks during AI interactions.
 
+## Upgrading to 0.17.0
+
+> **Breaking change for operators with custom `config.yaml` files.**
+>
+> 0.17.0 enables strict YAML decoding (`#[serde(deny_unknown_fields)]`) on
+> the `Config`, `ServerConfig`, `OllamaConfig`, and `SecurityConfig`
+> structs. Any field present in `config.yaml` that is **not** documented
+> in `config.yaml.example` will cause the proxy to fail at startup with
+> an error naming the offending field.
+>
+> Why: this catches typos like `hsot:` instead of `host:` or stale keys
+> from older versions, instead of silently using a default and producing
+> puzzling runtime behavior.
+>
+> Mitigation: the error message names the offending field; remove it
+> from `config.yaml` and restart. Strict decoding is **only** applied
+> to local config files - PANW response payloads continue to decode
+> leniently to absorb additive upstream schema changes.
+>
+> See `CHANGELOG.md` for the full 0.17.0 change set.
+
 ## Installation Options
 
 There are two ways to install and run panw-api-ollama:
