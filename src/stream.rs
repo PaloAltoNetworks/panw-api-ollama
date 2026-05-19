@@ -9,7 +9,16 @@ use pin_project::pin_project;
 use std::{
     pin::Pin,
     task::{Context, Poll},
+    time::Duration,
 };
+use tokio::time::Sleep;
+
+/// Hard cap on combined buffered (text + code) bytes before forcing an assessment.
+/// Protects against OOM under sustained streaming without boundary triggers.
+const HARD_CAP_BYTES: usize = 400_000;
+/// Idle window after which an in-flight stream is force-assessed even without a
+/// boundary trigger. Defends against slow-dribble bypass attempts.
+const IDLE_FLUSH: Duration = Duration::from_millis(2000);
 
 // Type alias for complex assessment future to improve readability
 type AssessmentFuture = Pin<Box<dyn Future<Output = Result<Assessment, StreamError>> + Send>>;
@@ -239,7 +248,6 @@ impl StreamBuffer {
         let has_new_code = !new_code.is_empty();
 
         if is_prompt {
-            // For prompt content
             Content {
                 prompt: Some(new_text.to_string()),
                 response: None,
@@ -249,7 +257,6 @@ impl StreamBuffer {
                 tool_event: None,
             }
         } else {
-            // For response content
             Content {
                 prompt: None,
                 response: Some(new_text.to_string()),
@@ -478,6 +485,21 @@ impl StreamBuffer {
         // Not returning individual chunks - accumulate until batch is ready
         None
     }
+
+    /// True when accumulated unassessed text+code exceeds the hard cap. Triggers a
+    /// forced assessment to bound memory growth.
+    fn over_cap(&self) -> bool {
+        self.text_buffer.len() > HARD_CAP_BYTES
+            || self.code_buffer.len() > HARD_CAP_BYTES
+            || self.text_buffer.len() + self.code_buffer.len() > HARD_CAP_BYTES
+    }
+
+    /// True when there is unassessed content waiting (text or code beyond the last
+    /// assessed positions).
+    fn has_unassessed_content(&self) -> bool {
+        self.text_buffer.len() > self.last_assessed_text_pos
+            || self.code_buffer.len() > self.last_assessed_code_pos
+    }
 }
 
 #[pin_project]
@@ -499,6 +521,11 @@ where
     finished: bool,
     retry_count: u32,
     is_prompt: bool,
+    /// Idle-flush timer. Fires when no inner-stream chunk has arrived for IDLE_FLUSH
+    /// and there is unassessed content; forces an assessment to defend against
+    /// slow-dribble bypass.
+    #[pin]
+    idle_timer: Sleep,
 }
 
 /// Creates a formatted response for blocked content.
@@ -617,6 +644,7 @@ where
             finished: false,
             retry_count: 0,
             is_prompt,
+            idle_timer: tokio::time::sleep(IDLE_FLUSH),
         }
     }
 
@@ -725,57 +753,31 @@ where
         is_prompt: bool,
     ) -> Option<Result<Bytes, StreamError>> {
         if let Ok(chunk) = std::str::from_utf8(&bytes) {
-            // Check if this is the final chunk containing LLM metrics
+            // Final chunk metrics
             if let Ok(json) = serde_json::from_str::<serde_json::Value>(chunk) {
                 if json.get("done").and_then(|v| v.as_bool()).unwrap_or(false) {
-                    // Use the shared utility function to log metrics
                     log_llm_metrics(&json, true);
                 }
             }
 
-            // Process the chunk which will now properly separate text and code for assessment
             buffer.process(chunk);
-
-            // Call detect_code_blocks to find and handle code block markers
             buffer.detect_code_blocks();
-
-            // Always buffer the chunk while we determine if assessment is needed
             buffer.buffer_pending_chunk(bytes);
-
-            // Check if we need to trigger an assessment
-            if buffer.get_assessable_chunk(is_prompt).is_some() {
-                *assessment_fut = Some(create_security_assessment_future(
-                    buffer,
-                    security_client,
-                    model_name,
-                    is_prompt,
-                ));
-                // We're already buffering chunks - set the waiting flag
-                buffer.waiting_for_assessment = true;
-                return None;
-            }
-
-            // If we're not waiting for assessment, we should still assess this content
-            // before sending it, so we'll create an assessment future anyway
-            if !buffer.waiting_for_assessment {
-                // Always perform some level of assessment before sending content
-                buffer.waiting_for_assessment = true;
-                *assessment_fut = Some(create_security_assessment_future(
-                    buffer,
-                    security_client,
-                    model_name,
-                    is_prompt,
-                ));
-            }
-
-            return None;
+        } else {
+            // Non-UTF8 bytes: still buffer them so a forced assessment can cover them.
+            buffer.buffer_pending_chunk(bytes);
         }
 
-        // If we couldn't process as UTF-8, add to pending buffer to be safe
-        buffer.buffer_pending_chunk(bytes);
-
-        // If we're not waiting for assessment, trigger one anyway for safety
-        if !buffer.waiting_for_assessment {
+        // Trigger assessment ONLY when:
+        //   1. No assessment future is already in flight (avoid drop-on-overwrite race), AND
+        //   2. Either an assessable boundary/window was reached, OR the hard cap was hit.
+        //
+        // The previous unconditional fallback caused a per-chunk PANW round trip; removing it
+        // reduces calls by 5-50x without weakening correctness because tail content is
+        // re-checked at stream-end via process_stream_end.
+        if assessment_fut.is_none()
+            && (buffer.get_assessable_chunk(is_prompt).is_some() || buffer.over_cap())
+        {
             buffer.waiting_for_assessment = true;
             *assessment_fut = Some(create_security_assessment_future(
                 buffer,
@@ -887,6 +889,25 @@ where
                 return Poll::Ready(None);
             }
 
+            // Idle-flush: if no assessment is in flight but we have unassessed content,
+            // poll the timer. When it elapses, force an assessment to defend against
+            // slow-dribble bypass.
+            if this.assessment_fut.is_none()
+                && this.buffer.has_unassessed_content()
+                && this.idle_timer.as_mut().poll(cx).is_ready()
+            {
+                *this.assessment_fut = Some(create_security_assessment_future(
+                    this.buffer,
+                    this.security_client,
+                    this.model_name,
+                    *this.is_prompt,
+                ));
+                this.buffer.waiting_for_assessment = true;
+                this.idle_timer
+                    .as_mut()
+                    .reset(tokio::time::Instant::now() + IDLE_FLUSH);
+            }
+
             // Process pending security assessments
             if let Some(fut) = this.assessment_fut.as_mut() {
                 match fut.as_mut().poll(cx) {
@@ -911,6 +932,8 @@ where
                     }
                     Poll::Ready(Err(e)) => {
                         this.assessment_fut.take();
+                        this.buffer.blocked = true;
+                        *this.finished = true;
                         return Poll::Ready(Some(Err(e)));
                     }
                     Poll::Pending => return Poll::Pending,
@@ -920,6 +943,11 @@ where
             // Process incoming stream chunks
             match ready!(this.inner.as_mut().poll_next(cx)) {
                 Some(Ok(bytes)) => {
+                    // A chunk just arrived: extend the idle window.
+                    this.idle_timer
+                        .as_mut()
+                        .reset(tokio::time::Instant::now() + IDLE_FLUSH);
+
                     Self::process_stream_chunk(
                         bytes,
                         this.buffer,
@@ -929,10 +957,6 @@ where
                         *this.is_prompt,
                     );
 
-                    // After processing the chunk, check if we have any completed content to return.
-                    // If an assessment future was created, loop back so the top of the loop polls
-                    // it (which registers the reqwest waker). Manual wake_by_ref here would
-                    // busy-loop the task and burn a CPU core per concurrent stream.
                     if this.assessment_fut.is_some() {
                         continue;
                     } else if let Some(bytes) = this.buffer.get_next_chunk() {
@@ -941,6 +965,10 @@ where
                     continue;
                 }
                 Some(Err(e)) => {
+                    // Mark blocked + finished so subsequent polls return None and so any
+                    // not-yet-assessed buffered bytes are dropped.
+                    this.buffer.blocked = true;
+                    *this.finished = true;
                     return Poll::Ready(Some(Err(StreamError::NetworkError(e.to_string()))));
                 }
                 None => {
@@ -957,7 +985,6 @@ where
                         // Loop back to poll the assessment future (waker registered there).
                         continue;
                     } else if let Some(bytes) = this.buffer.get_next_chunk() {
-                        // Try to return any remaining buffered chunks
                         return Poll::Ready(Some(Ok(bytes)));
                     } else {
                         *this.finished = true;
@@ -992,3 +1019,4 @@ where
         self.poll_next_impl(cx)
     }
 }
+
