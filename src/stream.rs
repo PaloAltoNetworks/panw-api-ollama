@@ -93,9 +93,13 @@ impl StreamBuffer {
     ///
     /// * `chunk` - A string representing a JSON chunk from the Ollama API
     fn process(&mut self, chunk: &str) {
-        // Parse Ollama's JSON response chunk
+        // Parse Ollama's JSON response chunk. Both /api/chat (message.content) and
+        // /api/generate (top-level response) are supported.
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(chunk) {
-            if let Some(content) = json["message"]["content"].as_str() {
+            let content_opt = json["message"]["content"]
+                .as_str()
+                .or_else(|| json["response"].as_str());
+            if let Some(content) = content_opt {
                 // Look for code block markers in the incoming content
                 if content.contains("```") {
                     // Contains a code block marker, need special processing
@@ -1058,6 +1062,15 @@ mod tests {
         b.text_buffer = "before```after".to_string();
         b.detect_code_blocks();
         assert!(b.in_code_block);
+    }
+
+    #[test]
+    fn process_extracts_generate_response_field() {
+        // /api/generate emits {"response":"..."} chunks (no message.content).
+        let mut b = StreamBuffer::new();
+        b.process(r#"{"response":"hello "}"#);
+        b.process(r#"{"response":"world"}"#);
+        assert_eq!(b.text_buffer, "hello world");
     }
 
     #[test]
