@@ -44,8 +44,8 @@ pub async fn handle_generate(
         return Ok(response);
     }
 
-    // Route based on streaming or non-streaming mode
-    if request.stream.unwrap() {
+    // Route based on streaming or non-streaming mode (Ollama default is streaming).
+    if request.stream.unwrap_or(true) {
         debug!("Handling streaming generate request");
         handle_streaming_generate(State(state), Json(request)).await
     } else {

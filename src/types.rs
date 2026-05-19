@@ -232,79 +232,135 @@ pub struct ScanRequest {
     /// Transaction ID for tracking the request
     pub tr_id: String,
 
+    /// Optional session correlation identifier echoed back in ScanResponse.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+
     /// Configuration profile for the security assessment
     pub ai_profile: AiProfile,
 
     /// Additional context about the application and user
     pub metadata: Metadata,
 
-    /// Array of content objects to be scanned
+    /// Array of content objects to be scanned. Spec: ordered list, last is the
+    /// element to scan, prior elements provide context.
     pub contents: Vec<Content>,
 }
 
 /// Response from a PANW AI Runtime security assessment.
 ///
 /// Contains the results of evaluating content against security policies,
-/// including categorization and detected issues.
+/// including categorization and detected issues. Aligned with scan-service
+/// OpenAPI spec (schema `ScanResponse`).
 #[derive(Debug, Clone, Deserialize)]
 pub struct ScanResponse {
-    /// Unique identifier for the assessment report
+    /// Source of the scan request (e.g. `AI-Runtime-API`, `AI-Runtime-MCP-Server`).
+    #[serde(default)]
+    pub source: Option<String>,
+
+    /// Unique identifier for the assessment report.
+    /// Spec-required; kept defaultable for v0.16 compatibility while PANW deployments
+    /// roll forward. `validate_required` will warn when defaulted.
     #[serde(default)]
     pub report_id: String,
 
-    /// UUID of this particular scan
+    /// UUID of this particular scan.
     #[serde(default)]
     pub scan_id: uuid::Uuid,
 
-    /// Optional transaction ID matching the request
+    /// Optional transaction ID matching the request.
     #[serde(default)]
     pub tr_id: Option<String>,
 
-    /// Optional identifier of the security profile used
+    /// Session correlation identifier echoed from the request.
+    #[serde(default)]
+    pub session_id: Option<String>,
+
+    /// Optional identifier of the security profile used.
     #[serde(default)]
     pub profile_id: Option<String>,
 
-    /// Optional name of the security profile used
+    /// Optional name of the security profile used.
     #[serde(default)]
     pub profile_name: Option<String>,
 
-    /// Security category assigned (e.g., "benign", "malicious")
+    /// Security category assigned (e.g., "benign", "malicious").
     pub category: String,
 
-    /// Recommended action ("allow", "block", etc.)
+    /// Recommended action ("allow", "block", etc.).
     pub action: String,
 
-    /// Security issues found in the prompt
+    /// Whether any detection service timed out during scanning.
+    #[serde(default)]
+    pub timeout: bool,
+
+    /// Whether any detection service errored during scanning.
+    #[serde(default)]
+    pub error: bool,
+
+    /// Detection service errors / timeouts.
+    #[serde(default)]
+    pub errors: Vec<ContentErrors>,
+
+    /// Security issues found in the prompt.
     #[serde(default)]
     pub prompt_detected: PromptDetected,
 
-    /// Security issues found in the response
+    /// Security issues found in the response.
     #[serde(default)]
     pub response_detected: ResponseDetected,
 
-    /// Masked sensitive data found in the prompt
+    /// Masked sensitive data found in the prompt.
     #[serde(default)]
     pub prompt_masked_data: MaskedData,
 
-    /// Masked sensitive data found in the response
+    /// Masked sensitive data found in the response.
     #[serde(default)]
     pub response_masked_data: MaskedData,
 
-    /// Detailed threat detection information for the prompt
+    /// Detailed threat detection information for the prompt.
     #[serde(default)]
     pub prompt_detection_details: PromptDetectionDetails,
 
-    /// Detailed threat detection information for the response
+    /// Detailed threat detection information for the response.
     #[serde(default)]
     pub response_detection_details: ResponseDetectionDetails,
 
-    /// Optional timestamp when assessment was created
+    /// Tool / MCP detection results.
+    #[serde(default)]
+    pub tool_detected: Option<ToolDetected>,
+
+    /// Optional timestamp when assessment was created.
     #[serde(default)]
     pub created_at: Option<DateTime<Utc>>,
 
-    /// Optional timestamp when assessment was completed
+    /// Optional timestamp when assessment was completed.
     #[serde(default)]
     pub completed_at: Option<DateTime<Utc>>,
+}
+
+impl ScanResponse {
+    /// Post-deserialize validation: warns when spec-required fields are defaulted
+    /// (compat phase) and hard-fails when truly required semantics are absent.
+    pub fn validate_required(&self) -> Result<(), String> {
+        if self.report_id.is_empty() {
+            tracing::warn!(
+                "PANW response missing required field 'report_id'; accepted in v0.16 compat mode"
+            );
+        }
+        if self.scan_id.is_nil() {
+            tracing::warn!(
+                "PANW response missing required field 'scan_id'; accepted in v0.16 compat mode"
+            );
+        }
+        if self.category.is_empty() {
+            return Err("PANW response missing required field 'category'".into());
+        }
+        if self.action.is_empty() {
+            return Err("PANW response missing required field 'action'".into());
+        }
+        Ok(())
+    }
 }
 
 impl ScanResponse {
@@ -319,19 +375,25 @@ impl ScanResponse {
     /// A ScanResponse object with default safe values.
     pub fn default_safe_response() -> Self {
         Self {
+            source: None,
             report_id: String::new(),
             scan_id: uuid::Uuid::default(),
             tr_id: None,
+            session_id: None,
             profile_id: None,
             profile_name: None,
             category: "benign".to_string(),
             action: "allow".to_string(),
+            timeout: false,
+            error: false,
+            errors: Vec::new(),
             prompt_detected: PromptDetected::default(),
             response_detected: ResponseDetected::default(),
             prompt_masked_data: MaskedData::default(),
             response_masked_data: MaskedData::default(),
             prompt_detection_details: PromptDetectionDetails::default(),
             response_detection_details: ResponseDetectionDetails::default(),
+            tool_detected: None,
             created_at: None,
             completed_at: None,
         }
@@ -343,8 +405,12 @@ impl ScanResponse {
 /// Specifies which security profile should be used when evaluating content.
 #[derive(Debug, Clone, Serialize)]
 pub struct AiProfile {
-    /// Name of the security profile to apply
-    pub profile_name: String,
+    /// UUID of the security profile to apply (alternative to `profile_name`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile_id: Option<String>,
+    /// Name of the security profile to apply (alternative to `profile_id`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile_name: Option<String>,
 }
 
 /// Metadata providing context for PANW security assessments.
@@ -365,6 +431,22 @@ pub struct Metadata {
     /// IP address of the end user using the AI application
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user_ip: Option<String>,
+
+    /// Agent metadata (agent_id / agent_version / agent_arn) — populated when
+    /// the proxy is fronting an agentic workload.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_meta: Option<AgentMeta>,
+}
+
+/// Agent metadata sub-block of `Metadata` (per scan-service spec `AgentMeta`).
+#[derive(Debug, Clone, Serialize)]
+pub struct AgentMeta {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_arn: Option<String>,
 }
 
 /// Content to be assessed by the PANW AI Runtime security API.
@@ -392,6 +474,23 @@ pub struct Content {
     /// Context for grounding LLM responses
     #[serde(skip_serializing_if = "Option::is_none")]
     pub context: Option<String>,
+
+    /// Tool / MCP event information for agent observability.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_event: Option<ToolEvent>,
+}
+
+/// MCP / tool invocation event sent inside a Content for agent visibility.
+#[derive(Debug, Clone, Serialize)]
+pub struct ToolEvent {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<ToolEventMetadata>,
+    /// Raw JSON string of input to the server (per spec).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input: Option<String>,
+    /// Raw JSON string of output from the server (per spec).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output: Option<String>,
 }
 
 /// Security issues detected in a prompt during PANW assessment.
@@ -468,12 +567,145 @@ pub struct PromptDetectionDetails {
     /// Details about topic guardrail violations
     #[serde(default)]
     pub topic_guardrails_details: Option<TopicGuardRails>,
+    /// Toxic content classification details (categories detected)
+    #[serde(default)]
+    pub toxic_content_details: Option<ToxicContentDetails>,
 }
 
 /// Detailed information about response threat detections.
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct ResponseDetectionDetails {
     /// Details about topic guardrail violations
+    #[serde(default)]
+    pub topic_guardrails_details: Option<TopicGuardRails>,
+    /// Toxic content classification details (categories detected)
+    #[serde(default)]
+    pub toxic_content_details: Option<ToxicContentDetails>,
+}
+
+/// Toxic content classification breakdown.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct ToxicContentDetails {
+    #[serde(default)]
+    pub toxic_categories: Vec<String>,
+}
+
+/// Detection service error / timeout entry attached to ScanResponse.errors.
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct ContentErrors {
+    #[serde(default)]
+    pub content_type: Option<ContentErrorType>,
+    #[serde(default)]
+    pub feature: Option<DetectionServiceName>,
+    #[serde(default)]
+    pub status: Option<ErrorStatus>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ContentErrorType {
+    Prompt,
+    Response,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ErrorStatus {
+    Error,
+    Timeout,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DetectionServiceName {
+    Dlp,
+    Injection,
+    UrlCats,
+    ToxicContent,
+    MaliciousCode,
+    Agent,
+    TopicViolation,
+    DbSecurity,
+    Ungrounded,
+}
+
+/// Tool / MCP scan results (top-level under ScanResponse.tool_detected).
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct ToolDetected {
+    #[serde(default)]
+    pub verdict: Option<String>,
+    #[serde(default)]
+    pub metadata: Option<ToolEventMetadata>,
+    #[serde(default)]
+    pub summary: Option<ScanSummary>,
+    #[serde(default)]
+    pub input_detected: Option<IODetected>,
+    #[serde(default)]
+    pub output_detected: Option<IODetected>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ToolEventMetadata {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ecosystem: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub method: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tool_invoked: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct ScanSummary {
+    #[serde(default)]
+    pub detections: ToolDetectionFlags,
+    #[serde(default)]
+    pub threats: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct ToolDetectionFlags {
+    #[serde(default)]
+    pub injection: bool,
+    #[serde(default)]
+    pub url_cats: bool,
+    #[serde(default)]
+    pub dlp: bool,
+    #[serde(default)]
+    pub db_security: bool,
+    #[serde(default)]
+    pub toxic_content: bool,
+    #[serde(default)]
+    pub malicious_code: bool,
+    #[serde(default)]
+    pub agent: bool,
+    #[serde(default)]
+    pub topic_violation: bool,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct IODetected {
+    #[serde(default)]
+    pub detection_entries: Vec<ToolDetectionEntry>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct ToolDetectionEntry {
+    #[serde(default)]
+    pub tool_invoked: Option<String>,
+    #[serde(default)]
+    pub detections: ToolDetectionFlags,
+    #[serde(default)]
+    pub threats: Vec<String>,
+    #[serde(default)]
+    pub details: Option<ToolDetectionDetails>,
+    #[serde(default)]
+    pub masked_data: Option<MaskedData>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct ToolDetectionDetails {
     #[serde(default)]
     pub topic_guardrails_details: Option<TopicGuardRails>,
 }
@@ -523,4 +755,90 @@ pub enum StreamError {
     SecurityError(String),
     #[error("Network error: {0}")]
     NetworkError(String),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scan_response_minimal_decodes() {
+        let json = include_str!("../tests/fixtures/scan_response_minimal.json");
+        let r: ScanResponse = serde_json::from_str(json).expect("minimal scan response");
+        assert_eq!(r.report_id, "R-1");
+        assert_eq!(r.category, "benign");
+        assert_eq!(r.action, "allow");
+        assert!(!r.prompt_detected.dlp);
+        assert!(!r.prompt_detected.injection);
+    }
+
+    #[test]
+    fn scan_response_blocked_decodes() {
+        let json = include_str!("../tests/fixtures/scan_response_blocked.json");
+        let r: ScanResponse = serde_json::from_str(json).expect("blocked scan response");
+        assert_eq!(r.action, "block");
+        assert_eq!(r.category, "malicious");
+        assert!(r.prompt_detected.injection);
+    }
+
+    #[test]
+    fn scan_response_dlp_masked_decodes() {
+        let json = include_str!("../tests/fixtures/scan_response_dlp_masked.json");
+        let r: ScanResponse = serde_json::from_str(json).expect("dlp masked scan response");
+        assert!(r.prompt_detected.dlp);
+        assert!(!r.prompt_masked_data.data.is_empty());
+        assert_eq!(r.prompt_masked_data.pattern_detections.len(), 1);
+        assert_eq!(r.prompt_masked_data.pattern_detections[0].pattern, "EMAIL");
+    }
+
+    #[test]
+    fn scan_response_with_new_fields_decodes() {
+        // Pre-P0-5 baseline: code does NOT model `source`, `session_id`, `tool_detected`,
+        // `errors`, `timeout`, `error`, `toxic_content_details`. Verify current behavior:
+        // unknown fields are ignored, response decodes successfully.
+        let json = include_str!("../tests/fixtures/scan_response_with_new_fields.json");
+        let r: ScanResponse = serde_json::from_str(json).expect("new-fields scan response");
+        assert_eq!(r.report_id, "R-4");
+    }
+
+    #[test]
+    fn default_safe_response_is_safe() {
+        let r = ScanResponse::default_safe_response();
+        assert_eq!(r.action, "allow");
+        assert_eq!(r.category, "benign");
+    }
+
+    #[test]
+    fn chat_request_without_stream_field_decodes_to_none() {
+        let json = r#"{"model":"llama3","messages":[{"role":"user","content":"hi"}]}"#;
+        let r: ChatRequest = serde_json::from_str(json).unwrap();
+        // Default behavior: stream omitted => None; handlers must default to true.
+        assert_eq!(r.stream, None);
+        assert!(r.stream.unwrap_or(true));
+    }
+
+    #[test]
+    fn generate_request_without_stream_field_decodes_to_none() {
+        let json = r#"{"model":"llama3","prompt":"hi"}"#;
+        let r: GenerateRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(r.stream, None);
+        assert!(r.stream.unwrap_or(true));
+    }
+
+    #[test]
+    fn generate_request_serializes_optional_stream() {
+        let req = GenerateRequest {
+            model: "llama3".into(),
+            prompt: "hi".into(),
+            system: None,
+            template: None,
+            context: None,
+            stream: None,
+            raw: None,
+            format: None,
+            options: None,
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        assert!(!json.contains("\"stream\""), "None stream must be skipped: {}", json);
+    }
 }

@@ -80,8 +80,8 @@ pub async fn handle_chat(
         return Ok(response);
     }
 
-    // Route based on streaming or non-streaming mode
-    if request.stream.unwrap() {
+    // Route based on streaming or non-streaming mode (Ollama default is streaming).
+    if request.stream.unwrap_or(true) {
         debug!("Handling streaming chat request");
         handle_streaming_chat(State(state), Json(request)).await
     } else {

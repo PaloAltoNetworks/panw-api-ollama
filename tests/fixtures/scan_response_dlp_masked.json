@@ -1,0 +1,24 @@
+{
+  "report_id": "R-3",
+  "scan_id": "33333333-3333-3333-3333-333333333333",
+  "category": "benign",
+  "action": "allow",
+  "timeout": false,
+  "error": false,
+  "errors": [],
+  "prompt_detected": {
+    "dlp": true,
+    "injection": false,
+    "url_cats": false,
+    "toxic_content": false,
+    "malicious_code": false,
+    "agent": false,
+    "topic_violation": false
+  },
+  "prompt_masked_data": {
+    "data": "Email: ***@example.com",
+    "pattern_detections": [
+      { "pattern": "EMAIL", "locations": [[7, 22]] }
+    ]
+  }
+}

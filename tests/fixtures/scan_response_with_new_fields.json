@@ -1,0 +1,36 @@
+{
+  "source": "AI-Runtime-API",
+  "report_id": "R-4",
+  "scan_id": "44444444-4444-4444-4444-444444444444",
+  "tr_id": "tr-1",
+  "session_id": "sess-1",
+  "profile_id": "55555555-5555-5555-5555-555555555555",
+  "profile_name": "demo-profile",
+  "category": "benign",
+  "action": "allow",
+  "timeout": false,
+  "error": false,
+  "errors": [
+    {
+      "content_type": "prompt",
+      "feature": "dlp",
+      "status": "timeout"
+    }
+  ],
+  "prompt_detection_details": {
+    "toxic_content_details": { "toxic_categories": ["hate", "violence"] }
+  },
+  "tool_detected": {
+    "verdict": "benign",
+    "metadata": {
+      "ecosystem": "mcp",
+      "method": "tools/call",
+      "server_name": "internal",
+      "tool_invoked": "get_file"
+    },
+    "summary": {
+      "detections": { "injection": false, "dlp": false },
+      "threats": []
+    }
+  }
+}

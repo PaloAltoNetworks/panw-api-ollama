@@ -193,6 +193,7 @@ impl Content {
             code_prompt,
             code_response,
             context,
+            tool_event: None,
         })
     }
 }
@@ -268,8 +269,21 @@ impl SecurityClient {
     // * `app_name` - Name of the application using this security client
     // * `app_user` - Identifier for the user or context within the application
     pub fn new(config: SecurityConfig) -> Self {
+        // PANW scan calls must be bounded; runaway requests cannot block the proxy
+        // tokio runtime indefinitely.
+        let client = Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .connect_timeout(std::time::Duration::from_secs(5))
+            .pool_max_idle_per_host(64)
+            .pool_idle_timeout(std::time::Duration::from_secs(90))
+            .tcp_keepalive(std::time::Duration::from_secs(30))
+            .https_only(true)
+            .min_tls_version(reqwest::tls::Version::TLS_1_2)
+            .user_agent(concat!("panw-api-ollama/", env!("CARGO_PKG_VERSION")))
+            .build()
+            .expect("PANW reqwest client build");
         Self {
-            client: Client::new(),
+            client,
             base_url: config.base_url,
             api_key: config.api_key,
             profile_name: config.profile_name,
@@ -496,12 +510,13 @@ impl SecurityClient {
         let mut code_content = String::new();
         let mut in_code_block = false;
         let mut buffer = String::new();
-        let mut language_marker = false;
 
         for line in content.lines() {
             let trimmed = line.trim();
 
-            // Check for code block delimiter
+            // Check for code block delimiter. The fence line itself is consumed here;
+            // any language specifier that follows ``` (e.g. "```rust") sits on the
+            // fence line and is therefore already excluded from the captured code.
             if trimmed.starts_with("```") {
                 if in_code_block {
                     // End of code block - add collected content to result
@@ -512,16 +527,8 @@ impl SecurityClient {
                 } else {
                     // Start of code block
                     in_code_block = true;
-                    // If there's content after the ``` it's a language specifier, skip this line
-                    language_marker = trimmed.len() > 3;
                 }
             } else if in_code_block {
-                // Skip the first line if it was just a language marker
-                if language_marker {
-                    language_marker = false;
-                    continue;
-                }
-
                 // Inside a code block - collect content
                 buffer.push_str(line);
                 buffer.push('\n');
@@ -681,14 +688,17 @@ impl SecurityClient {
     fn create_scan_request(&self, content_obj: Content, model_name: &str) -> ScanRequest {
         ScanRequest {
             tr_id: Uuid::new_v4().to_string(),
+            session_id: None,
             ai_profile: AiProfile {
-                profile_name: self.profile_name.clone(),
+                profile_id: None,
+                profile_name: Some(self.profile_name.clone()),
             },
             metadata: Metadata {
                 app_name: self.app_name.to_string(),
                 app_user: self.app_user.to_string(),
                 ai_model: model_name.to_string(),
                 user_ip: self.user_ip.clone(),
+                agent_meta: None,
             },
             contents: vec![content_obj],
         }
@@ -817,9 +827,125 @@ impl SecurityClient {
         }
 
         // Parse JSON response
-        serde_json::from_str(&body_text).map_err(|e| {
+        let resp: ScanResponse = serde_json::from_str(&body_text).map_err(|e| {
             error!("Failed to parse PANW security assessment response: {}", e);
             SecurityError::JsonError(e)
+        })?;
+
+        // Spec-required field validation. v0.16: warn-on-default for `report_id`/`scan_id`,
+        // hard-fail on `category`/`action`. v0.17 will hard-fail on all four.
+        if let Err(reason) = resp.validate_required() {
+            error!("Invalid PANW response: {}", reason);
+            return Err(SecurityError::AssessmentError(reason));
+        }
+        Ok(resp)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn client() -> SecurityClient {
+        SecurityClient::new(SecurityConfig {
+            base_url: "https://example.invalid".into(),
+            api_key: "test".into(),
+            profile_name: "p".into(),
+            app_name: "test".into(),
+            app_user: "u".into(),
+            contextual_grounding: String::new(),
         })
+    }
+
+    #[test]
+    fn extract_code_blocks_basic() {
+        let c = client();
+        let s = "before\n```\ncode\n```\nafter\n";
+        let extracted = c.extract_code_blocks(s);
+        assert!(extracted.contains("code"));
+        assert!(!extracted.contains("before"));
+        assert!(!extracted.contains("after"));
+    }
+
+    #[test]
+    fn extract_code_blocks_with_language_marker() {
+        let c = client();
+        let s = "```rust\nlet x = 1;\n```\n";
+        let extracted = c.extract_code_blocks(s);
+        assert!(extracted.contains("let x = 1;"));
+        assert!(!extracted.contains("rust"));
+    }
+
+    #[test]
+    fn extract_code_blocks_unclosed_fence() {
+        let c = client();
+        let s = "intro\n```\nleak\nsecret\n";
+        let extracted = c.extract_code_blocks(s);
+        // Unclosed fence: trailing content captured as code (current behavior).
+        assert!(extracted.contains("leak"));
+    }
+
+    #[test]
+    fn extract_code_blocks_empty_input() {
+        let c = client();
+        assert_eq!(c.extract_code_blocks(""), "");
+    }
+
+    #[test]
+    fn extract_code_blocks_no_fences() {
+        let c = client();
+        assert_eq!(c.extract_code_blocks("plain text\nno code\n"), "");
+    }
+
+    #[test]
+    fn remove_code_blocks_strips_fences() {
+        let c = client();
+        let s = "before\n```\nsecret\n```\nafter\n";
+        let stripped = c.remove_code_blocks(s);
+        assert!(stripped.contains("before"));
+        assert!(stripped.contains("after"));
+        assert!(!stripped.contains("secret"));
+    }
+
+    #[tokio::test]
+    async fn assess_content_skips_empty() {
+        let c = client();
+        let r = c.assess_content("", "llama3", true).await.unwrap();
+        assert!(r.is_safe);
+        assert_eq!(r.action, "allow");
+    }
+
+    #[test]
+    fn process_scan_result_blocked_does_not_emit_masked_content() {
+        let c = client();
+        let mut resp = ScanResponse::default_safe_response();
+        resp.action = "block".into();
+        resp.category = "malicious".into();
+        resp.prompt_detected.dlp = true;
+        resp.prompt_masked_data.data = "should-not-leak".into();
+        let a = c.process_scan_result(resp).unwrap();
+        assert!(!a.is_safe);
+        assert!(!a.is_masked);
+        assert!(a.final_content.is_empty());
+    }
+
+    #[test]
+    fn process_scan_result_safe_with_dlp_masks() {
+        let c = client();
+        let mut resp = ScanResponse::default_safe_response();
+        resp.prompt_detected.dlp = true;
+        resp.prompt_masked_data.data = "Email: ***@x.com".into();
+        let a = c.process_scan_result(resp).unwrap();
+        assert!(a.is_safe);
+        assert!(a.is_masked);
+        assert_eq!(a.final_content, "Email: ***@x.com");
+    }
+
+    #[test]
+    fn content_builder_requires_at_least_one_field() {
+        let r = Content::builder().build();
+        assert!(r.is_err());
+        let r = Content::builder().with_prompt("p".into()).build();
+        assert!(r.is_ok());
     }
 }
