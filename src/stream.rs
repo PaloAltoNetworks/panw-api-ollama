@@ -927,16 +927,15 @@ where
                         *this.is_prompt,
                     );
 
-                    // After processing the chunk, check if we have any completed content to return
+                    // After processing the chunk, check if we have any completed content to return.
+                    // If an assessment future was created, loop back so the top of the loop polls
+                    // it (which registers the reqwest waker). Manual wake_by_ref here would
+                    // busy-loop the task and burn a CPU core per concurrent stream.
                     if this.assessment_fut.is_some() {
-                        // If we started an assessment, wait for it to complete
-                        cx.waker().wake_by_ref();
-                        return Poll::Pending;
+                        continue;
                     } else if let Some(bytes) = this.buffer.get_next_chunk() {
-                        // If we have a chunk ready to return, return it
                         return Poll::Ready(Some(Ok(bytes)));
                     }
-                    // Otherwise continue processing more chunks
                     continue;
                 }
                 Some(Err(e)) => {
@@ -953,9 +952,8 @@ where
                     ) {
                         return Poll::Ready(Some(result));
                     } else if this.assessment_fut.is_some() {
-                        // If we started a final assessment, wait for it to complete
-                        cx.waker().wake_by_ref();
-                        return Poll::Pending;
+                        // Loop back to poll the assessment future (waker registered there).
+                        continue;
                     } else if let Some(bytes) = this.buffer.get_next_chunk() {
                         // Try to return any remaining buffered chunks
                         return Poll::Ready(Some(Ok(bytes)));
