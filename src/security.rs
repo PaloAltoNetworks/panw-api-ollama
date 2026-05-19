@@ -507,9 +507,12 @@ impl SecurityClient {
     //
     // A string containing all extracted code blocks concatenated together
     fn extract_code_blocks(&self, content: &str) -> String {
-        let mut code_content = String::new();
+        // Worst case the entire input is code; preallocating to `content.len()`
+        // bounds the result and avoids repeated `String::push_str` realloc
+        // chains for large code-heavy responses.
+        let mut code_content = String::with_capacity(content.len());
         let mut in_code_block = false;
-        let mut buffer = String::new();
+        let mut buffer = String::with_capacity(content.len());
 
         for line in content.lines() {
             let trimmed = line.trim();
