@@ -11,6 +11,7 @@
 /// 2. Parse into structured types
 /// 3. Validate all required settings
 /// 4. Make configuration available to application components
+use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 use std::env;
 use std::fs;
@@ -88,8 +89,10 @@ pub struct SecurityConfig {
     /// Base URL of the PANW AI Runtime security API
     pub base_url: String,
 
-    /// API key for authenticating with the security service
-    pub api_key: String,
+    /// API key for authenticating with the security service.
+    /// Wrapped in `SecretString` to prevent accidental disclosure via
+    /// `Debug`, `Display`, default `serde::Serialize`, or `format!`.
+    pub api_key: SecretString,
 
     /// Security profile name to use for assessments
     pub profile_name: String,
@@ -133,7 +136,7 @@ fn load_from_env() -> Config {
     let security = SecurityConfig {
         base_url: env::var("SECURITY_BASE_URL")
             .unwrap_or_else(|_| "https://service.api.aisecurity.paloaltonetworks.com".to_string()),
-        api_key: env::var("SECURITY_API_KEY").unwrap_or_default(),
+        api_key: SecretString::from(env::var("SECURITY_API_KEY").unwrap_or_default()),
         profile_name: env::var("SECURITY_PROFILE_NAME").unwrap_or_default(),
         app_name: env::var("SECURITY_APP_NAME").unwrap_or_else(|_| "panw-api-ollama".to_string()),
         app_user: env::var("SECURITY_APP_USER").unwrap_or_else(|_| "default".to_string()),
@@ -226,7 +229,7 @@ fn override_with_env(config: &mut Config) {
     }
 
     if let Ok(api_key) = env::var("SECURITY_API_KEY") {
-        config.security.api_key = api_key;
+        config.security.api_key = SecretString::from(api_key);
     }
 
     if let Ok(profile_name) = env::var("SECURITY_PROFILE_NAME") {
@@ -280,7 +283,7 @@ impl Config {
         }
 
         // Validate security config - API credentials
-        if self.security.base_url.is_empty() || self.security.api_key.is_empty() {
+        if self.security.base_url.is_empty() || self.security.api_key.expose_secret().is_empty() {
             return Err(ConfigError::ValidationError(
                 "Security credentials missing (base_url or api_key)".into(),
             ));
@@ -313,5 +316,54 @@ impl Config {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cfg(api_key: &str) -> Config {
+        Config {
+            server: ServerConfig {
+                host: "127.0.0.1".into(),
+                port: 11435,
+                debug_level: "INFO".into(),
+            },
+            ollama: OllamaConfig {
+                base_url: "http://localhost:11434".into(),
+            },
+            security: SecurityConfig {
+                base_url: "https://example.invalid".into(),
+                api_key: SecretString::from(api_key),
+                profile_name: "p".into(),
+                app_name: "a".into(),
+                app_user: "u".into(),
+                contextual_grounding: String::new(),
+            },
+        }
+    }
+
+    #[test]
+    fn debug_format_redacts_api_key() {
+        let c = cfg("super-secret-token-do-not-leak");
+        let dbg = format!("{:?}", c);
+        assert!(
+            !dbg.contains("super-secret-token-do-not-leak"),
+            "api_key leaked through Debug: {dbg}"
+        );
+    }
+
+    #[test]
+    fn validate_rejects_empty_api_key() {
+        let c = cfg("");
+        let err = c.validate().unwrap_err();
+        assert!(matches!(err, ConfigError::ValidationError(_)));
+    }
+
+    #[test]
+    fn validate_accepts_non_empty_api_key() {
+        let c = cfg("present");
+        c.validate().unwrap();
     }
 }
