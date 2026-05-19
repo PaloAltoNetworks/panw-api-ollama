@@ -114,83 +114,84 @@ impl IntoResponse for ApiError {
 mod tests {
     use super::*;
     use crate::security::SecurityError;
+    use axum::body::to_bytes;
+    use serde_json::Value;
 
-    fn body_str(err: ApiError) -> (StatusCode, String) {
-        let (status, msg) = match err {
-            ApiError::OllamaError(_) => (
-                StatusCode::BAD_GATEWAY,
-                "Upstream Ollama service unavailable.".to_string(),
-            ),
-            ApiError::SecurityError(e) => match e {
-                SecurityError::Forbidden => (
-                    StatusCode::FORBIDDEN,
-                    "Invalid API key or insufficient permissions. Please check your PANW API key configuration.".to_string(),
-                ),
-                SecurityError::Unauthenticated => (
-                    StatusCode::UNAUTHORIZED,
-                    "Authentication failed. Please check your credentials.".to_string(),
-                ),
-                SecurityError::TooManyRequests(i, u) => (
-                    StatusCode::TOO_MANY_REQUESTS,
-                    format!("Rate limit exceeded. Please retry after {} {}.", i, u),
-                ),
-                SecurityError::BlockedContent(m) => (
-                    StatusCode::FORBIDDEN,
-                    format!("Content blocked: {}", m),
-                ),
-                _ => (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "Security service error. See server logs for details.".to_string(),
-                ),
-            },
-            ApiError::InternalError(_) => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Internal server error.".to_string(),
-            ),
-        };
-        (status, msg)
+    // Drives the real `IntoResponse::into_response` impl, then reads the body
+    // bytes through axum's body reader and parses the JSON envelope. Returns
+    // `(status, error_field, raw_json)` so tests assert on the actual wire
+    // format clients see, not a duplicated mock.
+    async fn render(err: ApiError) -> (StatusCode, String, Value) {
+        let resp = err.into_response();
+        let status = resp.status();
+        let body = to_bytes(resp.into_body(), 64 * 1024)
+            .await
+            .expect("read response body");
+        let json: Value = serde_json::from_slice(&body).expect("response body is valid JSON");
+        let msg = json
+            .get("error")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .expect("response body has an `error` field");
+        (status, msg, json)
     }
 
-    #[test]
-    fn internal_error_does_not_leak_message_to_client() {
+    #[tokio::test]
+    async fn internal_error_does_not_leak_message_to_client() {
         let leaky = ApiError::InternalError("DB at 10.0.0.5 down: secret_xyz".into());
-        let (status, msg) = body_str(leaky);
+        let (status, msg, json) = render(leaky).await;
         assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
         assert!(!msg.contains("10.0.0.5"));
         assert!(!msg.contains("secret_xyz"));
+        // Wire envelope contract: `status` field mirrors the HTTP status code.
+        assert_eq!(json.get("status").and_then(|v| v.as_u64()), Some(500));
     }
 
-    #[test]
-    fn security_assessment_error_does_not_leak_upstream_detail() {
+    #[tokio::test]
+    async fn security_assessment_error_does_not_leak_upstream_detail() {
         let leaky = ApiError::SecurityError(SecurityError::AssessmentError(
             "PANW returned 502 from internal.svc:8080".into(),
         ));
-        let (status, msg) = body_str(leaky);
+        let (status, msg, _json) = render(leaky).await;
         assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
         assert!(!msg.contains("internal.svc"));
         assert!(!msg.contains("8080"));
     }
 
-    #[test]
-    fn user_actionable_security_messages_are_preserved() {
-        let (s, m) = body_str(ApiError::SecurityError(SecurityError::Forbidden));
+    #[tokio::test]
+    async fn ollama_error_does_not_leak_upstream_detail() {
+        // ApiError::OllamaError wraps OllamaError; construct an ApiError of
+        // that variant via OllamaError::ApiError which carries leaky fields.
+        let leaky = ApiError::OllamaError(crate::ollama::OllamaError::ApiError {
+            status: reqwest::StatusCode::NOT_FOUND,
+            message: "model 'super-secret-internal-name' not found at 10.0.0.5:11434".into(),
+        });
+        let (status, msg, _) = render(leaky).await;
+        assert_eq!(status, StatusCode::BAD_GATEWAY);
+        assert!(!msg.contains("super-secret-internal-name"));
+        assert!(!msg.contains("10.0.0.5"));
+    }
+
+    #[tokio::test]
+    async fn user_actionable_security_messages_are_preserved() {
+        let (s, m, _) = render(ApiError::SecurityError(SecurityError::Forbidden)).await;
         assert_eq!(s, StatusCode::FORBIDDEN);
         assert!(m.contains("API key"));
 
-        let (s, m) = body_str(ApiError::SecurityError(SecurityError::Unauthenticated));
+        let (s, m, _) = render(ApiError::SecurityError(SecurityError::Unauthenticated)).await;
         assert_eq!(s, StatusCode::UNAUTHORIZED);
         assert!(m.contains("Authentication"));
 
-        let (s, m) = body_str(ApiError::SecurityError(SecurityError::TooManyRequests(
+        let (s, m, _) = render(ApiError::SecurityError(SecurityError::TooManyRequests(
             5,
             "minute".into(),
-        )));
+        ))).await;
         assert_eq!(s, StatusCode::TOO_MANY_REQUESTS);
         assert!(m.contains("5 minute"));
 
-        let (s, m) = body_str(ApiError::SecurityError(SecurityError::BlockedContent(
+        let (s, m, _) = render(ApiError::SecurityError(SecurityError::BlockedContent(
             "policy:dlp".into(),
-        )));
+        ))).await;
         assert_eq!(s, StatusCode::FORBIDDEN);
         assert!(m.contains("policy:dlp"));
     }
