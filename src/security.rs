@@ -509,12 +509,13 @@ impl SecurityClient {
         let mut code_content = String::new();
         let mut in_code_block = false;
         let mut buffer = String::new();
-        let mut language_marker = false;
 
         for line in content.lines() {
             let trimmed = line.trim();
 
-            // Check for code block delimiter
+            // Check for code block delimiter. The fence line itself is consumed here;
+            // any language specifier that follows ``` (e.g. "```rust") sits on the
+            // fence line and is therefore already excluded from the captured code.
             if trimmed.starts_with("```") {
                 if in_code_block {
                     // End of code block - add collected content to result
@@ -525,16 +526,8 @@ impl SecurityClient {
                 } else {
                     // Start of code block
                     in_code_block = true;
-                    // If there's content after the ``` it's a language specifier, skip this line
-                    language_marker = trimmed.len() > 3;
                 }
             } else if in_code_block {
-                // Skip the first line if it was just a language marker
-                if language_marker {
-                    language_marker = false;
-                    continue;
-                }
-
                 // Inside a code block - collect content
                 buffer.push_str(line);
                 buffer.push('\n');
