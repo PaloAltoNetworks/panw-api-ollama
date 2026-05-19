@@ -253,3 +253,72 @@ pub fn log_llm_metrics(json_data: &serde_json::Value, is_streaming: bool) -> boo
         false
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::security::Assessment;
+    use crate::types::ScanResponse;
+    use serde_json::json;
+
+    fn assessment_with_prompt_dlp() -> Assessment {
+        let mut details = ScanResponse::default_safe_response();
+        details.prompt_detected.dlp = true;
+        details.prompt_detected.injection = true;
+        Assessment {
+            is_safe: false,
+            category: "malicious".into(),
+            action: "block".into(),
+            final_content: String::new(),
+            is_masked: false,
+            details,
+        }
+    }
+
+    #[test]
+    fn format_security_violation_lists_each_active_reason() {
+        let a = assessment_with_prompt_dlp();
+        let msg = format_security_violation_message(&a);
+        assert!(msg.contains("Category: malicious"));
+        assert!(msg.contains("Action: block"));
+        assert!(msg.contains("Prompt contains sensitive information"));
+        assert!(msg.contains("Prompt contains injection threats"));
+    }
+
+    #[test]
+    fn format_security_violation_falls_back_when_no_flags_set() {
+        let mut a = assessment_with_prompt_dlp();
+        // Reset every flag.
+        a.details = ScanResponse::default_safe_response();
+        let msg = format_security_violation_message(&a);
+        assert!(msg.contains("Unspecified security concern"));
+    }
+
+    #[test]
+    fn log_llm_metrics_returns_false_when_no_metrics_present() {
+        let v = json!({"model": "qwen", "done": true});
+        assert!(!log_llm_metrics(&v, false));
+    }
+
+    #[test]
+    fn log_llm_metrics_returns_true_when_metrics_present() {
+        let v = json!({
+            "total_duration": 1_500_000_000u64,
+            "load_duration": 500_000_000u64,
+            "eval_count": 42u64,
+            "eval_duration": 700_000_000u64
+        });
+        assert!(log_llm_metrics(&v, true));
+    }
+
+    #[test]
+    fn build_json_response_sets_content_type() {
+        let resp = build_json_response(Bytes::from_static(b"{\"ok\":true}")).unwrap();
+        let ct = resp
+            .headers()
+            .get("Content-Type")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or_default();
+        assert_eq!(ct, "application/json");
+    }
+}
