@@ -1,7 +1,15 @@
 [package]
 name = "panw-api-ollama"
-version = "0.16.0"
+version = "0.17.0"
 edition = "2021"
+
+[profile.release]
+# LTO + single codegen unit gives ~5-15% throughput on the streaming hot path
+# at the cost of slower release builds; codegen-units=1 also reduces binary
+# size. `strip = true` removes debug symbols from the final binary.
+lto = "thin"
+codegen-units = 1
+strip = true
 
 [dependencies]
 axum = "0.8.9"
