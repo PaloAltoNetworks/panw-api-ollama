@@ -158,6 +158,56 @@ impl OllamaClient {
         Ok(response.bytes_stream())
     }
 
+    // Forwards an arbitrary request to upstream Ollama as a raw passthrough.
+    //
+    // Used by the catch-all fallback route to support every Ollama endpoint
+    // we do not explicitly implement (and any future additions). Preserves
+    // method, path, query, headers, and body bytes; does NOT scan, validate,
+    // or rewrite the body.
+    //
+    // Unlike `forward`/`forward_get`/`stream`, this method returns the
+    // upstream `Response` even when the status indicates failure, so the
+    // fallback can pass non-2xx responses through verbatim. Errors are only
+    // produced for true network failures (DNS, connect, timeout).
+    pub async fn forward_raw(
+        &self,
+        method: reqwest::Method,
+        path_and_query: &str,
+        headers: reqwest::header::HeaderMap,
+        body: Bytes,
+    ) -> Result<Response, OllamaError> {
+        let url = format!("{}{}", self.base_url, path_and_query);
+        debug!("Passthrough {} -> {}", method, url);
+        let mut req = self.client.request(method, &url);
+        // Strip hop-by-hop headers that must not be forwarded
+        // (Host is rebuilt by reqwest, Content-Length recomputed from body).
+        let mut forwarded = reqwest::header::HeaderMap::new();
+        for (name, value) in headers.iter() {
+            let n = name.as_str().to_ascii_lowercase();
+            if matches!(
+                n.as_str(),
+                "host"
+                    | "content-length"
+                    | "connection"
+                    | "transfer-encoding"
+                    | "upgrade"
+                    | "proxy-connection"
+                    | "keep-alive"
+            ) {
+                continue;
+            }
+            forwarded.append(name.clone(), value.clone());
+        }
+        req = req.headers(forwarded);
+        if !body.is_empty() {
+            req = req.body(body);
+        }
+        req.send().await.map_err(|e| {
+            error!("Passthrough request to Ollama failed: {}", e);
+            OllamaError::RequestError(e)
+        })
+    }
+
     //--------------------------------------------------------------------------
     // Helper Methods
     //--------------------------------------------------------------------------
