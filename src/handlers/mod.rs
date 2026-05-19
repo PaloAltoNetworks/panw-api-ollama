@@ -9,9 +9,8 @@ use tracing::error;
 pub mod chat;
 pub mod embeddings;
 pub mod generate;
-pub mod models;
+pub mod passthrough;
 pub mod utils;
-pub mod version;
 
 // Custom error types for API request handling.
 //

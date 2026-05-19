@@ -107,3 +107,4 @@ flake.lock
 config.yaml
 .env
 .claude-octopus/
+.claude/
