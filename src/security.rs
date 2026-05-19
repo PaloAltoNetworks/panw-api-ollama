@@ -45,9 +45,13 @@ use uuid::Uuid;
 
 // Maximum length of a PANW response body included verbatim in error logs.
 // The full body can echo user prompts and model responses. Truncating to a
-// short prefix lets operators correlate failures without persisting sensitive
-// content in INFO/ERROR-level logs.
-const PANW_BODY_LOG_PREFIX_LEN: usize = 256;
+// bounded prefix lets operators correlate failures without persisting
+// sensitive content in INFO/ERROR-level logs.
+//
+// 1024 bytes accommodates a typical PANW JSON error envelope
+// (`{"error":{"message":"...","request_id":"...","retry_after":{...}}}`)
+// without truncation while still bounding the worst case.
+const PANW_BODY_LOG_PREFIX_LEN: usize = 1024;
 
 // Returns a body excerpt suitable for ERROR-level logging: a short prefix
 // followed by an explicit truncation marker. Full body remains available at
