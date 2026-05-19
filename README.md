@@ -173,6 +173,30 @@ Two example model configurations are included to demonstrate before/after compar
 
 These configurations allow you to perform side-by-side comparisons and demonstrations of how the Palo Alto Networks Prisma AIRS AI Runtime Security affects the model responses.
 
+## Smoke tests
+
+End-to-end smoke tests live in `tests/smoke.rs` and cover every documented
+endpoint - benign and malicious payloads, streaming and non-streaming,
+chat (including thinking and code snippets), generate, and embeddings.
+They are gated behind `#[ignore]` so `cargo test` stays fast and offline.
+
+Run against a live proxy:
+
+```bash
+# proxy already running on localhost:11435 with upstream Ollama on :11434
+cargo test --test smoke -- --ignored --nocapture
+
+# point at a different proxy / model
+BASE_URL=http://my-proxy:11435 \
+  MODEL=llama3.1:8b \
+  EMBED_MODEL=nomic-embed-text \
+  cargo test --test smoke -- --ignored --nocapture
+```
+
+The malicious test cases include prompt-injection text, reverse-shell
+shell snippets, and DLP probes; the proxy must either block (HTTP 403)
+or return a masked / safety-rejected response.
+
 ## Resources
 
 - [Product Information](https://www.paloaltonetworks.com/prisma/prisma-ai-runtime-security)
