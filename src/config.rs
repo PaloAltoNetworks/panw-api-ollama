@@ -44,7 +44,15 @@ pub enum ConfigError {
 ///
 /// This structure is the top-level container for all configuration settings
 /// used by the application, organized into logical sections.
+///
+/// `deny_unknown_fields` is applied to every config struct so a typo in
+/// `config.yaml` (`hsot` instead of `host`, `time_out` instead of `timeout`)
+/// fails fast at startup with a precise location instead of silently using
+/// a default value and producing puzzling runtime behavior. This strict
+/// posture is **only** for local config files; PANW response payloads still
+/// decode leniently to absorb additive upstream schema changes.
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Config {
     /// Server configuration settings
     pub server: ServerConfig,
@@ -60,6 +68,7 @@ pub struct Config {
 ///
 /// Controls how the proxy server listens for connections and processes requests.
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ServerConfig {
     /// IP address to bind the server to
     pub host: String,
@@ -75,6 +84,7 @@ pub struct ServerConfig {
 ///
 /// Configuration for connecting to and interacting with the Ollama API service.
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct OllamaConfig {
     /// Base URL of the Ollama API service
     pub base_url: String,
@@ -85,6 +95,7 @@ pub struct OllamaConfig {
 /// Configuration for connecting to the PANW AI Runtime security service
 /// and setting up content security scanning.
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SecurityConfig {
     /// Base URL of the PANW AI Runtime security API
     pub base_url: String,
@@ -365,5 +376,71 @@ mod tests {
     fn validate_accepts_non_empty_api_key() {
         let c = cfg("present");
         c.validate().unwrap();
+    }
+
+    #[test]
+    fn unknown_field_in_config_yaml_is_rejected() {
+        let yaml = r#"
+server:
+  host: "127.0.0.1"
+  port: 11435
+  debug_level: "INFO"
+ollama:
+  base_url: "http://localhost:11434"
+security:
+  base_url: "https://example.invalid"
+  api_key: "k"
+  profile_name: "p"
+  app_name: "a"
+  app_user: "u"
+  bogus_typo: "this should fail"
+"#;
+        let result: Result<Config, _> = serde_yaml_ng::from_str(yaml);
+        let err = result.expect_err("expected deny_unknown_fields to reject bogus_typo");
+        assert!(
+            err.to_string().contains("bogus_typo"),
+            "error should mention the offending field: {err}"
+        );
+    }
+
+    #[test]
+    fn unknown_field_in_server_section_is_rejected() {
+        let yaml = r#"
+server:
+  host: "127.0.0.1"
+  port: 11435
+  debug_level: "INFO"
+  hsot: "typo here"
+ollama:
+  base_url: "http://localhost:11434"
+security:
+  base_url: "https://example.invalid"
+  api_key: "k"
+  profile_name: "p"
+  app_name: "a"
+  app_user: "u"
+"#;
+        let result: Result<Config, _> = serde_yaml_ng::from_str(yaml);
+        let err = result.expect_err("expected deny_unknown_fields to reject hsot");
+        assert!(err.to_string().contains("hsot"));
+    }
+
+    #[test]
+    fn well_formed_yaml_decodes_successfully() {
+        let yaml = r#"
+server:
+  host: "127.0.0.1"
+  port: 11435
+  debug_level: "INFO"
+ollama:
+  base_url: "http://localhost:11434"
+security:
+  base_url: "https://example.invalid"
+  api_key: "k"
+  profile_name: "p"
+  app_name: "a"
+  app_user: "u"
+"#;
+        let _: Config = serde_yaml_ng::from_str(yaml).expect("valid config");
     }
 }
