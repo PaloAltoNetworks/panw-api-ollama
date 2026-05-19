@@ -71,7 +71,7 @@ impl OllamaClient {
     // ```
     // let client = OllamaClient::new("http://localhost:11434");
     // ```
-    pub fn new(base_url: String) -> Self {
+    pub fn new(base_url: String) -> Result<Self, reqwest::Error> {
         // Ollama generations can legitimately take many minutes; do NOT set an
         // overall request timeout. Cap connect time and per-chunk read instead.
         let client = Client::builder()
@@ -81,9 +81,8 @@ impl OllamaClient {
             .pool_idle_timeout(std::time::Duration::from_secs(90))
             .tcp_keepalive(std::time::Duration::from_secs(30))
             .user_agent(concat!("panw-api-ollama/", env!("CARGO_PKG_VERSION")))
-            .build()
-            .expect("ollama reqwest client build");
-        Self { client, base_url }
+            .build()?;
+        Ok(Self { client, base_url })
     }
 
     //--------------------------------------------------------------------------

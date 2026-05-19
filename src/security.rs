@@ -268,7 +268,7 @@ impl SecurityClient {
     // * `profile_name` - Name of the AI security profile to use for assessments
     // * `app_name` - Name of the application using this security client
     // * `app_user` - Identifier for the user or context within the application
-    pub fn new(config: SecurityConfig) -> Self {
+    pub fn new(config: SecurityConfig) -> Result<Self, reqwest::Error> {
         // PANW scan calls must be bounded; runaway requests cannot block the proxy
         // tokio runtime indefinitely.
         let client = Client::builder()
@@ -280,9 +280,8 @@ impl SecurityClient {
             .https_only(true)
             .min_tls_version(reqwest::tls::Version::TLS_1_2)
             .user_agent(concat!("panw-api-ollama/", env!("CARGO_PKG_VERSION")))
-            .build()
-            .expect("PANW reqwest client build");
-        Self {
+            .build()?;
+        Ok(Self {
             client,
             base_url: config.base_url,
             api_key: config.api_key,
@@ -291,7 +290,7 @@ impl SecurityClient {
             app_user: config.app_user,
             contextual_grounding_context: config.contextual_grounding,
             user_ip: None,
-        }
+        })
     }
 
     //--------------------------------------------------------------------------
@@ -855,6 +854,7 @@ mod tests {
             app_user: "u".into(),
             contextual_grounding: String::new(),
         })
+        .expect("test SecurityClient build")
     }
 
     #[test]
