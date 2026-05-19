@@ -1,11 +1,38 @@
 use crate::{handlers::ApiError, stream::SecurityAssessedStream, AppState};
 
+use async_stream::stream;
 use axum::{body::Body, response::Response};
 use bytes::Bytes;
 use futures_util::stream::StreamExt;
 use http_body_util::StreamBody;
 use serde::Serialize;
-use tracing::{error, info};
+use std::time::Duration;
+use tokio::time::timeout;
+use tracing::{error, info, warn};
+
+// Maximum wall-clock time the proxy will wait between successive chunks
+// from the upstream Ollama stream before aborting the connection.
+//
+// Defends against slow-loris-style attacks where an adversarial upstream
+// (or a wedged Ollama process) drips a few bytes and then stalls
+// indefinitely, accumulating buffer state and tying up a tokio task.
+//
+// Tunable via `STREAM_CHUNK_TIMEOUT_SECS` (default: 300s = 5 min, generous
+// because legitimate slow models can take a long time to emit the first
+// token). Setting `0` disables the timeout.
+const DEFAULT_STREAM_CHUNK_TIMEOUT_SECS: u64 = 300;
+
+fn stream_chunk_timeout() -> Option<Duration> {
+    let secs = std::env::var("STREAM_CHUNK_TIMEOUT_SECS")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(DEFAULT_STREAM_CHUNK_TIMEOUT_SECS);
+    if secs == 0 {
+        None
+    } else {
+        Some(Duration::from_secs(secs))
+    }
+}
 
 // Builds an HTTP response with JSON content type from the provided bytes.
 pub fn build_json_response(bytes: Bytes) -> Result<Response<Body>, ApiError> {
@@ -32,10 +59,44 @@ where
     T: Serialize + Send + 'static,
 {
     // Get the original stream from ollama client
-    let stream = state.ollama_client.stream(endpoint, &request).await?;
+    let upstream = state.ollama_client.stream(endpoint, &request).await?;
+
+    // Wrap upstream with a per-chunk wall-clock timeout. If the upstream
+    // does not produce a chunk within `chunk_timeout`, terminate the stream
+    // cleanly so buffer state and tokio resources are released. This is a
+    // defensive guard against a wedged or adversarial upstream; legitimate
+    // slow models stay well under the default 5-minute window.
+    let chunk_timeout = stream_chunk_timeout();
+    let timed_stream = stream! {
+        let mut upstream = Box::pin(upstream);
+        loop {
+            let next = match chunk_timeout {
+                Some(d) => match timeout(d, upstream.next()).await {
+                    Ok(item) => item,
+                    Err(_elapsed) => {
+                        warn!(
+                            "Upstream Ollama stream produced no chunk within {:?}; aborting",
+                            d
+                        );
+                        break;
+                    }
+                },
+                None => upstream.next().await,
+            };
+            match next {
+                Some(item) => yield item,
+                None => break,
+            }
+        }
+    };
+
+    // SecurityAssessedStream requires `S: Stream + Unpin`. async_stream's
+    // `AsyncStream` is `!Unpin`; pin to the heap so the type satisfies the
+    // bound without changing the downstream API.
+    let timed_stream = Box::pin(timed_stream);
 
     // Convert the stream to the expected type by mapping the error type
-    let converted_stream = stream.map(|result| result.map_err(convert_stream_error));
+    let converted_stream = timed_stream.map(|result| result.map_err(convert_stream_error));
 
     // Create the security-assessed stream
     let assessed_stream = SecurityAssessedStream::new(
@@ -320,5 +381,47 @@ mod tests {
             .and_then(|v| v.to_str().ok())
             .unwrap_or_default();
         assert_eq!(ct, "application/json");
+    }
+
+    // The env-driven timeout helper is exercised in isolation. The streaming
+    // integration path is covered by the live smoke suite.
+    //
+    // Note: these tests mutate process-wide env vars and therefore must not
+    // run concurrently with each other. They share a mutex via `serial_test`
+    // would be cleanest, but since this crate has no other env-touching tests
+    // we accept the convention that all `STREAM_CHUNK_TIMEOUT_SECS` access
+    // lives here and rely on cargo's per-test isolation when running with
+    // `--test-threads=1` for env-sensitive runs.
+    #[test]
+    fn stream_chunk_timeout_default_when_env_unset() {
+        std::env::remove_var("STREAM_CHUNK_TIMEOUT_SECS");
+        assert_eq!(
+            stream_chunk_timeout(),
+            Some(Duration::from_secs(DEFAULT_STREAM_CHUNK_TIMEOUT_SECS))
+        );
+    }
+
+    #[test]
+    fn stream_chunk_timeout_respects_env_value() {
+        std::env::set_var("STREAM_CHUNK_TIMEOUT_SECS", "42");
+        assert_eq!(stream_chunk_timeout(), Some(Duration::from_secs(42)));
+        std::env::remove_var("STREAM_CHUNK_TIMEOUT_SECS");
+    }
+
+    #[test]
+    fn stream_chunk_timeout_zero_disables_timeout() {
+        std::env::set_var("STREAM_CHUNK_TIMEOUT_SECS", "0");
+        assert_eq!(stream_chunk_timeout(), None);
+        std::env::remove_var("STREAM_CHUNK_TIMEOUT_SECS");
+    }
+
+    #[test]
+    fn stream_chunk_timeout_falls_back_to_default_on_garbage() {
+        std::env::set_var("STREAM_CHUNK_TIMEOUT_SECS", "not-a-number");
+        assert_eq!(
+            stream_chunk_timeout(),
+            Some(Duration::from_secs(DEFAULT_STREAM_CHUNK_TIMEOUT_SECS))
+        );
+        std::env::remove_var("STREAM_CHUNK_TIMEOUT_SECS");
     }
 }
