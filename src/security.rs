@@ -193,6 +193,7 @@ impl Content {
             code_prompt,
             code_response,
             context,
+            tool_event: None,
         })
     }
 }
@@ -687,14 +688,17 @@ impl SecurityClient {
     fn create_scan_request(&self, content_obj: Content, model_name: &str) -> ScanRequest {
         ScanRequest {
             tr_id: Uuid::new_v4().to_string(),
+            session_id: None,
             ai_profile: AiProfile {
-                profile_name: self.profile_name.clone(),
+                profile_id: None,
+                profile_name: Some(self.profile_name.clone()),
             },
             metadata: Metadata {
                 app_name: self.app_name.to_string(),
                 app_user: self.app_user.to_string(),
                 ai_model: model_name.to_string(),
                 user_ip: self.user_ip.clone(),
+                agent_meta: None,
             },
             contents: vec![content_obj],
         }

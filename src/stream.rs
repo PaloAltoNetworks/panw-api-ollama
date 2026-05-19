@@ -246,6 +246,7 @@ impl StreamBuffer {
                 code_prompt: if has_new_code { Some(new_code.to_string()) } else { None },
                 code_response: None,
                 context: None,
+                tool_event: None,
             }
         } else {
             // For response content
@@ -255,6 +256,7 @@ impl StreamBuffer {
                 code_prompt: None,
                 code_response: if has_new_code { Some(new_code.to_string()) } else { None },
                 context: None,
+                tool_event: None,
             }
         }
     }
