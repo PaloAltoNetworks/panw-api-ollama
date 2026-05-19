@@ -841,4 +841,114 @@ mod tests {
         let json = serde_json::to_string(&req).unwrap();
         assert!(!json.contains("\"stream\""), "None stream must be skipped: {}", json);
     }
+
+    //
+    // Property assertions on ScanResponse shape across the fixture set.
+    // These guard against silent regressions where a field stops decoding
+    // (the parser succeeds but fields default to false) or where a
+    // detection flag is misnamed in a future schema bump.
+    //
+
+    #[test]
+    fn minimal_response_has_no_active_flags() {
+        let json = include_str!("../tests/fixtures/scan_response_minimal.json");
+        let r: ScanResponse = serde_json::from_str(json).unwrap();
+        let p = &r.prompt_detected;
+        assert!(!p.dlp);
+        assert!(!p.injection);
+        assert!(!p.url_cats);
+        assert!(!p.toxic_content);
+        assert!(!p.malicious_code);
+        assert!(!p.agent);
+        assert!(!p.topic_violation);
+        let resp = &r.response_detected;
+        assert!(!resp.dlp);
+        assert!(!resp.url_cats);
+        assert!(!resp.toxic_content);
+        assert!(!resp.malicious_code);
+        assert!(!resp.agent);
+        assert!(!resp.topic_violation);
+    }
+
+    #[test]
+    fn all_prompt_flags_decode_true_when_set() {
+        let json = r#"{
+            "report_id": "R-X",
+            "scan_id": "00000000-0000-0000-0000-000000000000",
+            "category": "malicious",
+            "action": "block",
+            "prompt_detected": {
+                "url_cats": true,
+                "dlp": true,
+                "injection": true,
+                "toxic_content": true,
+                "malicious_code": true,
+                "agent": true,
+                "topic_violation": true
+            }
+        }"#;
+        let r: ScanResponse = serde_json::from_str(json).expect("all-flags response");
+        let p = &r.prompt_detected;
+        assert!(p.url_cats);
+        assert!(p.dlp);
+        assert!(p.injection);
+        assert!(p.toxic_content);
+        assert!(p.malicious_code);
+        assert!(p.agent);
+        assert!(p.topic_violation);
+    }
+
+    #[test]
+    fn all_response_flags_decode_true_when_set() {
+        let json = r#"{
+            "report_id": "R-Y",
+            "scan_id": "00000000-0000-0000-0000-000000000001",
+            "category": "malicious",
+            "action": "block",
+            "response_detected": {
+                "url_cats": true,
+                "dlp": true,
+                "db_security": true,
+                "toxic_content": true,
+                "malicious_code": true,
+                "agent": true,
+                "ungrounded": true,
+                "topic_violation": true
+            }
+        }"#;
+        let r: ScanResponse = serde_json::from_str(json).expect("all-resp-flags response");
+        let resp = &r.response_detected;
+        assert!(resp.url_cats);
+        assert!(resp.dlp);
+        assert!(resp.db_security);
+        assert!(resp.toxic_content);
+        assert!(resp.malicious_code);
+        assert!(resp.agent);
+        assert!(resp.ungrounded);
+        assert!(resp.topic_violation);
+    }
+
+    #[test]
+    fn dlp_masked_data_pattern_locations_decode() {
+        let json = include_str!("../tests/fixtures/scan_response_dlp_masked.json");
+        let r: ScanResponse = serde_json::from_str(json).unwrap();
+        let pd = &r.prompt_masked_data.pattern_detections;
+        assert_eq!(pd.len(), 1);
+        assert_eq!(pd[0].pattern, "EMAIL");
+        assert_eq!(pd[0].locations.0.len(), 1, "exactly one location range");
+        assert_eq!(pd[0].locations.0[0], vec![7, 22]);
+    }
+
+    #[test]
+    fn blocked_fixture_only_injection_flag_set() {
+        let json = include_str!("../tests/fixtures/scan_response_blocked.json");
+        let r: ScanResponse = serde_json::from_str(json).unwrap();
+        assert!(r.prompt_detected.injection);
+        assert!(!r.prompt_detected.dlp);
+        assert!(!r.prompt_detected.url_cats);
+        assert!(!r.prompt_detected.toxic_content);
+        assert!(!r.prompt_detected.malicious_code);
+        assert!(!r.prompt_detected.agent);
+        assert!(!r.prompt_detected.topic_violation);
+    }
 }

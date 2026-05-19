@@ -30,6 +30,27 @@ The best part? It's completely transparent to your existing setup - [Ollama](htt
 - **Protect adversarial input**: Safeguard AI agents from malicious inputs and outputs while maintaining workflow flexibility.
 - **Prevent sensitive data leakage**: Use API-based threat detection to block sensitive data leaks during AI interactions.
 
+## Upgrading to 0.17.0
+
+> **Breaking change for operators with custom `config.yaml` files.**
+>
+> 0.17.0 enables strict YAML decoding (`#[serde(deny_unknown_fields)]`) on
+> the `Config`, `ServerConfig`, `OllamaConfig`, and `SecurityConfig`
+> structs. Any field present in `config.yaml` that is **not** documented
+> in `config.yaml.example` will cause the proxy to fail at startup with
+> an error naming the offending field.
+>
+> Why: this catches typos like `hsot:` instead of `host:` or stale keys
+> from older versions, instead of silently using a default and producing
+> puzzling runtime behavior.
+>
+> Mitigation: the error message names the offending field; remove it
+> from `config.yaml` and restart. Strict decoding is **only** applied
+> to local config files - PANW response payloads continue to decode
+> leniently to absorb additive upstream schema changes.
+>
+> See `CHANGELOG.md` for the full 0.17.0 change set.
+
 ## Installation Options
 
 There are two ways to install and run panw-api-ollama:
@@ -151,6 +172,30 @@ Two example model configurations are included to demonstrate before/after compar
 2. `NOPAWN.llama2-uncensored_latest-1747909327080.json` - The same model bypassing the security proxy
 
 These configurations allow you to perform side-by-side comparisons and demonstrations of how the Palo Alto Networks Prisma AIRS AI Runtime Security affects the model responses.
+
+## Smoke tests
+
+End-to-end smoke tests live in `tests/smoke.rs` and cover every documented
+endpoint - benign and malicious payloads, streaming and non-streaming,
+chat (including thinking and code snippets), generate, and embeddings.
+They are gated behind `#[ignore]` so `cargo test` stays fast and offline.
+
+Run against a live proxy:
+
+```bash
+# proxy already running on localhost:11435 with upstream Ollama on :11434
+cargo test --test smoke -- --ignored --nocapture
+
+# point at a different proxy / model
+BASE_URL=http://my-proxy:11435 \
+  MODEL=llama3.1:8b \
+  EMBED_MODEL=nomic-embed-text \
+  cargo test --test smoke -- --ignored --nocapture
+```
+
+The malicious test cases include prompt-injection text, reverse-shell
+shell snippets, and DLP probes; the proxy must either block (HTTP 403)
+or return a masked / safety-rejected response.
 
 ## Resources
 

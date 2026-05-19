@@ -37,10 +37,41 @@ use crate::{
     types::{AiProfile, Content, Metadata, ScanRequest, ScanResponse},
 };
 use reqwest::Client;
+use secrecy::{ExposeSecret, SecretString};
 use std::time::Instant;
 use thiserror::Error;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 use uuid::Uuid;
+
+// Maximum length of a PANW response body included verbatim in error logs.
+// The full body can echo user prompts and model responses. Truncating to a
+// bounded prefix lets operators correlate failures without persisting
+// sensitive content in INFO/ERROR-level logs.
+//
+// 1024 bytes accommodates a typical PANW JSON error envelope
+// (`{"error":{"message":"...","request_id":"...","retry_after":{...}}}`)
+// without truncation while still bounding the worst case.
+const PANW_BODY_LOG_PREFIX_LEN: usize = 1024;
+
+// Returns a body excerpt suitable for ERROR-level logging: a short prefix
+// followed by an explicit truncation marker. Full body remains available at
+// `trace!` level for ad-hoc debugging.
+fn body_excerpt(body: &str) -> String {
+    if body.len() <= PANW_BODY_LOG_PREFIX_LEN {
+        body.to_string()
+    } else {
+        let mut end = PANW_BODY_LOG_PREFIX_LEN;
+        // Avoid splitting a UTF-8 multibyte character.
+        while end > 0 && !body.is_char_boundary(end) {
+            end -= 1;
+        }
+        format!(
+            "{}... [truncated, {} bytes total]",
+            &body[..end],
+            body.len()
+        )
+    }
+}
 
 // Represents errors that can occur during security assessments with the PANW AI Runtime API.
 //
@@ -134,8 +165,9 @@ pub struct SecurityClient {
     // Base URL for the PANW API service
     base_url: String,
 
-    // API key for authenticating with PANW services
-    api_key: String,
+    // API key for authenticating with PANW services. Exposed only at the HTTP
+    // send site via `expose_secret()`; never logged, formatted, or serialized.
+    api_key: SecretString,
 
     // Security profile name to use for assessments
     profile_name: String,
@@ -268,7 +300,7 @@ impl SecurityClient {
     // * `profile_name` - Name of the AI security profile to use for assessments
     // * `app_name` - Name of the application using this security client
     // * `app_user` - Identifier for the user or context within the application
-    pub fn new(config: SecurityConfig) -> Self {
+    pub fn new(config: SecurityConfig) -> Result<Self, reqwest::Error> {
         // PANW scan calls must be bounded; runaway requests cannot block the proxy
         // tokio runtime indefinitely.
         let client = Client::builder()
@@ -280,9 +312,8 @@ impl SecurityClient {
             .https_only(true)
             .min_tls_version(reqwest::tls::Version::TLS_1_2)
             .user_agent(concat!("panw-api-ollama/", env!("CARGO_PKG_VERSION")))
-            .build()
-            .expect("PANW reqwest client build");
-        Self {
+            .build()?;
+        Ok(Self {
             client,
             base_url: config.base_url,
             api_key: config.api_key,
@@ -291,7 +322,7 @@ impl SecurityClient {
             app_user: config.app_user,
             contextual_grounding_context: config.contextual_grounding,
             user_ip: None,
-        }
+        })
     }
 
     //--------------------------------------------------------------------------
@@ -507,9 +538,12 @@ impl SecurityClient {
     //
     // A string containing all extracted code blocks concatenated together
     fn extract_code_blocks(&self, content: &str) -> String {
-        let mut code_content = String::new();
+        // Worst case the entire input is code; preallocating to `content.len()`
+        // bounds the result and avoids repeated `String::push_str` realloc
+        // chains for large code-heavy responses.
+        let mut code_content = String::with_capacity(content.len());
         let mut in_code_block = false;
-        let mut buffer = String::new();
+        let mut buffer = String::with_capacity(content.len());
 
         for line in content.lines() {
             let trimmed = line.trim();
@@ -741,7 +775,7 @@ impl SecurityClient {
             .client
             .post(&endpoint)
             .header("Content-Type", "application/json")
-            .header("x-pan-token", &self.api_key)
+            .header("x-pan-token", self.api_key.expose_secret())
             .json(payload)
             .send()
             .await
@@ -774,13 +808,20 @@ impl SecurityClient {
         status: reqwest::StatusCode,
         body_text: String,
     ) -> Result<ScanResponse, SecurityError> {
-        // Log the raw response in debug mode
+        // PANW response bodies can echo user prompts, model responses, and
+        // masked-DLP findings. Log the status at debug level; restrict the
+        // raw body to trace level so it never appears in standard logs.
         debug!("PANW API response status: {}", status);
-        debug!("Raw PANW response body:\n{}", body_text);
+        trace!(target: "panw::raw_body", "Raw PANW response body:\n{}", body_text);
 
         // Handle error status codes based on OpenAPI specification
         if !status.is_success() {
-            error!("PANW security assessment error: {} - {}", status, body_text);
+            // Log a bounded excerpt; never the full body at error level.
+            error!(
+                "PANW security assessment error: status={} body_excerpt={}",
+                status,
+                body_excerpt(&body_text)
+            );
 
             // Parse error response if possible
             let error_details = match serde_json::from_str::<serde_json::Value>(&body_text) {
@@ -846,15 +887,41 @@ impl SecurityClient {
 mod tests {
     use super::*;
 
+    #[test]
+    fn body_excerpt_passes_through_short_bodies() {
+        let s = "short body";
+        assert_eq!(body_excerpt(s), s);
+    }
+
+    #[test]
+    fn body_excerpt_truncates_long_bodies() {
+        let body = "x".repeat(PANW_BODY_LOG_PREFIX_LEN + 100);
+        let out = body_excerpt(&body);
+        assert!(out.len() < body.len());
+        assert!(out.contains("truncated"));
+        assert!(out.contains(&format!("{} bytes", body.len())));
+    }
+
+    #[test]
+    fn body_excerpt_handles_utf8_boundary() {
+        // Build a body whose byte at the cut-off is mid-multibyte.
+        let mut body = "a".repeat(PANW_BODY_LOG_PREFIX_LEN - 1);
+        body.push_str("é"); // 2 bytes; cut would split it.
+        body.push_str("more text");
+        // Should not panic and should produce valid UTF-8.
+        let _ = body_excerpt(&body);
+    }
+
     fn client() -> SecurityClient {
         SecurityClient::new(SecurityConfig {
             base_url: "https://example.invalid".into(),
-            api_key: "test".into(),
+            api_key: SecretString::from("test"),
             profile_name: "p".into(),
             app_name: "test".into(),
             app_user: "u".into(),
             contextual_grounding: String::new(),
         })
+        .expect("test SecurityClient build")
     }
 
     #[test]

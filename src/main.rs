@@ -45,10 +45,7 @@ use crate::ollama::OllamaClient;
 use crate::security::SecurityClient;
 
 // Web framework imports
-use axum::{
-    routing::{get, post},
-    Router,
-};
+use axum::{routing::post, Router};
 
 // Standard library imports
 use std::net::{IpAddr, SocketAddr};
@@ -207,14 +204,14 @@ fn build_app_state(
     info!("Building application state with configured clients");
 
     // Create Ollama client
-    let ollama_client = OllamaClient::new(ollama_base_url.clone());
+    let ollama_client = OllamaClient::new(ollama_base_url.clone())?;
     info!(
         "Created Ollama client with base URL: {}",
         ollama_base_url
     );
 
     // Create security client
-    let security_client = SecurityClient::new(security_config);
+    let security_client = SecurityClient::new(security_config)?;
 
     info!(
         "Created security client with base URL: {}",
@@ -244,28 +241,19 @@ fn build_app_state(
 fn build_router(state: AppState) -> Router {
     info!("Building API router with all endpoints");
 
-    // Group endpoints by functionality
-    let generation_routes = Router::new()
+    // Only endpoints that carry user prompts or model output get a dedicated
+    // handler with PANW scanning. Everything else (model management,
+    // metadata, OpenAI/Anthropic compat shims, future Ollama additions)
+    // flows through the catch-all passthrough below without scanning.
+    let scanned_routes = Router::new()
         .route("/api/generate", post(generate::handle_generate))
         .route("/api/chat", post(chat::handle_chat))
-        .route("/api/embeddings", post(embeddings::handle_embeddings));
+        .route("/api/embeddings", post(embeddings::handle_embeddings))
+        .route("/api/embed", post(embeddings::handle_embed));
 
-    let model_routes = Router::new()
-        .route("/api/tags", get(models::handle_list_models))
-        .route("/api/show", post(models::handle_show_model))
-        .route("/api/create", post(models::handle_create_model))
-        .route("/api/copy", post(models::handle_copy_model))
-        .route("/api/delete", post(models::handle_delete_model))
-        .route("/api/pull", post(models::handle_pull_model))
-        .route("/api/push", post(models::handle_push_model));
-
-    let utility_routes = Router::new().route("/api/version", get(version::handle_version));
-
-    // Combine all routes
     Router::new()
-        .merge(generation_routes)
-        .merge(model_routes)
-        .merge(utility_routes)
+        .merge(scanned_routes)
+        .fallback(handlers::passthrough::passthrough)
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
