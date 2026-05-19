@@ -37,6 +37,7 @@ use crate::{
     types::{AiProfile, Content, Metadata, ScanRequest, ScanResponse},
 };
 use reqwest::Client;
+use secrecy::{ExposeSecret, SecretString};
 use std::time::Instant;
 use thiserror::Error;
 use tracing::{debug, error, info, warn};
@@ -134,8 +135,9 @@ pub struct SecurityClient {
     // Base URL for the PANW API service
     base_url: String,
 
-    // API key for authenticating with PANW services
-    api_key: String,
+    // API key for authenticating with PANW services. Exposed only at the HTTP
+    // send site via `expose_secret()`; never logged, formatted, or serialized.
+    api_key: SecretString,
 
     // Security profile name to use for assessments
     profile_name: String,
@@ -741,7 +743,7 @@ impl SecurityClient {
             .client
             .post(&endpoint)
             .header("Content-Type", "application/json")
-            .header("x-pan-token", &self.api_key)
+            .header("x-pan-token", self.api_key.expose_secret())
             .json(payload)
             .send()
             .await
@@ -849,7 +851,7 @@ mod tests {
     fn client() -> SecurityClient {
         SecurityClient::new(SecurityConfig {
             base_url: "https://example.invalid".into(),
-            api_key: "test".into(),
+            api_key: SecretString::from("test"),
             profile_name: "p".into(),
             app_name: "test".into(),
             app_user: "u".into(),
