@@ -268,8 +268,21 @@ impl SecurityClient {
     // * `app_name` - Name of the application using this security client
     // * `app_user` - Identifier for the user or context within the application
     pub fn new(config: SecurityConfig) -> Self {
+        // PANW scan calls must be bounded; runaway requests cannot block the proxy
+        // tokio runtime indefinitely.
+        let client = Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .connect_timeout(std::time::Duration::from_secs(5))
+            .pool_max_idle_per_host(64)
+            .pool_idle_timeout(std::time::Duration::from_secs(90))
+            .tcp_keepalive(std::time::Duration::from_secs(30))
+            .https_only(true)
+            .min_tls_version(reqwest::tls::Version::TLS_1_2)
+            .user_agent(concat!("panw-api-ollama/", env!("CARGO_PKG_VERSION")))
+            .build()
+            .expect("PANW reqwest client build");
         Self {
-            client: Client::new(),
+            client,
             base_url: config.base_url,
             api_key: config.api_key,
             profile_name: config.profile_name,
