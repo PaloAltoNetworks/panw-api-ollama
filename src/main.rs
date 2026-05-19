@@ -207,14 +207,14 @@ fn build_app_state(
     info!("Building application state with configured clients");
 
     // Create Ollama client
-    let ollama_client = OllamaClient::new(ollama_base_url.clone());
+    let ollama_client = OllamaClient::new(ollama_base_url.clone())?;
     info!(
         "Created Ollama client with base URL: {}",
         ollama_base_url
     );
 
     // Create security client
-    let security_client = SecurityClient::new(security_config);
+    let security_client = SecurityClient::new(security_config)?;
 
     info!(
         "Created security client with base URL: {}",
