@@ -70,25 +70,41 @@ async fn assess_generate_prompt(
     state: &AppState,
     request: &GenerateRequest,
 ) -> Result<Result<(), Response>, ApiError> {
-    // Check input prompt
-    let assessment = state
-        .security_client
-        .assess_content(&request.prompt, &request.model, true)
-        .await?;
+    // Assess every attacker-controllable field that reaches the model.
+    // `system` and `template` override the Modelfile per Ollama's spec, so
+    // scanning `prompt` alone leaves a policy-override bypass.
+    let mut targets = vec![request.prompt.as_str()];
+    if let Some(system) = request.system.as_deref() {
+        if !system.trim().is_empty() {
+            targets.push(system);
+        }
+    }
+    if let Some(template) = request.template.as_deref() {
+        if !template.trim().is_empty() {
+            targets.push(template);
+        }
+    }
 
-    // If the content is not safe, create a blocked response
-    if !assessment.is_safe {
-        let blocked_message = format_security_violation_message(&assessment);
+    for content in targets {
+        let assessment = state
+            .security_client
+            .assess_content(content, &request.model, true)
+            .await?;
 
-        let response = GenerateResponse {
-            model: request.model.clone(),
-            created_at: chrono::Utc::now().to_rfc3339(),
-            response: blocked_message,
-            context: None,
-            done: true,
-        };
+        // If the content is not safe, create a blocked response
+        if !assessment.is_safe {
+            let blocked_message = format_security_violation_message(&assessment);
 
-        return Ok(Err(build_violation_response(response)?));
+            let response = GenerateResponse {
+                model: request.model.clone(),
+                created_at: chrono::Utc::now().to_rfc3339(),
+                response: blocked_message,
+                context: None,
+                done: true,
+            };
+
+            return Ok(Err(build_violation_response(response)?));
+        }
     }
 
     Ok(Ok(()))

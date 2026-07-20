@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.17.0] - 2026-05-19
 
 ### Security
+- Fix policy-override bypass on `/api/generate` (CWE-693). The handler scanned
+  only `prompt`, forwarding `system` and `template` to Ollama unscanned. Per
+  Ollama's spec, `system` overrides the Modelfile, so an attacker-supplied
+  `system` message could override operator security policy without ever
+  reaching the PANW scanner. `assess_generate_prompt` now scans `prompt`,
+  `system`, and `template`, matching the all-messages scan already done on
+  `/api/chat`. Reported by Yuval Fradkin <yuvalfradkin@gmail.com>.
 - Wrap the PANW API key in `secrecy::SecretString` so it cannot leak via
   `Debug`, `Display`, default `serde::Serialize`, or `format!`. The secret
   is exposed only at the HTTP send site via `expose_secret()`.
