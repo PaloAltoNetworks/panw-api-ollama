@@ -5,7 +5,7 @@ All notable changes to panw-api-ollama are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.17.0] - 2026-05-19
+## [0.17.1] - 2026-07-20
 
 ### Security
 - Fix policy-override bypass on `/api/generate` (CWE-693). The handler scanned
@@ -15,6 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reaching the PANW scanner. `assess_generate_prompt` now scans `prompt`,
   `system`, and `template`, matching the all-messages scan already done on
   `/api/chat`. Reported by Yuval Fradkin <yuvalfradkin@gmail.com>.
+
+### Tests
+- Add `generate_malicious_system_blocked_or_masked` smoke regression covering a
+  malicious `system` field with a benign prompt.
+
+## [0.17.0] - 2026-05-19
+
+### Security
 - Wrap the PANW API key in `secrecy::SecretString` so it cannot leak via
   `Debug`, `Display`, default `serde::Serialize`, or `format!`. The secret
   is exposed only at the HTTP send site via `expose_secret()`.
