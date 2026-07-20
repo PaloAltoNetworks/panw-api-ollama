@@ -5,6 +5,14 @@ All notable changes to panw-api-ollama are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.17.2] - 2026-07-20
+
+### Dependencies
+- Refresh Cargo.lock to latest semver-compatible versions (no manifest range
+  changes): tokio 1.52.3 -> 1.53.1, serde 1.0.228 -> 1.0.229, serde_json
+  1.0.149 -> 1.0.151, thiserror 2.0.18 -> 2.0.19, uuid 1.23.1 -> 1.24.0, plus
+  transitive updates.
+
 ## [0.17.1] - 2026-07-20
 
 ### Security
