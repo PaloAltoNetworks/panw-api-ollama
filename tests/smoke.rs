@@ -215,6 +215,28 @@ async fn generate_malicious_blocked_or_masked() {
 
 #[tokio::test]
 #[ignore = "requires a running panw-api-ollama proxy with an upstream Ollama"]
+async fn generate_malicious_system_blocked_or_masked() {
+    // Regression: system field must be scanned, not forwarded unscanned.
+    // Per Ollama spec, `system` overrides the Modelfile, so an unscanned
+    // system message is a policy-override bypass of the proxy guard.
+    let url = format!("{}/api/generate", base_url());
+    let body = serde_json::json!({
+        "model": model(),
+        "prompt": BENIGN_PROMPT,
+        "system": MALICIOUS_PROMPT,
+        "stream": false
+    });
+    let resp = client().post(&url).json(&body).send().await.expect("POST /api/generate malicious system");
+    let status = resp.status();
+    let text = resp.text().await.unwrap();
+    assert!(
+        status.as_u16() == 403 || (status.is_success() && text.contains("\"response\"")),
+        "unexpected status={status} body={text}"
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires a running panw-api-ollama proxy with an upstream Ollama"]
 async fn embeddings_legacy_benign() {
     if !upstream_supports_embeddings().await {
         eprintln!(
