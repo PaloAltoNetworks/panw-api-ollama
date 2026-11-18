@@ -81,6 +81,12 @@ impl OllamaClient {
             .pool_idle_timeout(std::time::Duration::from_secs(90))
             .tcp_keepalive(std::time::Duration::from_secs(30))
             .user_agent(concat!("panw-api-ollama/", env!("CARGO_PKG_VERSION")))
+            // Never follow upstream redirects. Ollama (gin) 307-redirects
+            // `/api/chat/` to `/api/chat` with the body preserved; following
+            // it here would land an unscanned passthrough request on a
+            // scanned inference endpoint. Redirects are returned to the
+            // client, whose retry then goes through the proxy's own routing.
+            .redirect(reqwest::redirect::Policy::none())
             .build()?;
         Ok(Self { client, base_url })
     }
