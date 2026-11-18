@@ -103,7 +103,3 @@ BASE_URL=http://my-proxy:11435 \
 - [Prisma AIRS AI Runtime documentation](https://docs.paloaltonetworks.com/ai-runtime-security)
 - [Scan API reference](https://pan.dev/prisma-airs/scan/api/)
 - [CHANGELOG](CHANGELOG.md)
-
-## Security
-
-To report a vulnerability in panw-api-ollama, contact the Palo Alto Networks PSIRT at psirt@paloaltonetworks.com rather than opening a public issue. Published advisories are listed under [Security advisories](https://github.com/PaloAltoNetworks/panw-api-ollama/security/advisories).
