@@ -5,6 +5,64 @@ All notable changes to panw-api-ollama are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.0] - 2026-11-18
+
+### Security
+- Fix a routing flaw in the proxy that let non-canonical paths skip content
+  scanning (CWE-693, CWE-436). Scanned routes (`/api/generate`, `/api/chat`,
+  `/api/embeddings`, `/api/embed`) matched exact paths only, so a variant like
+  `POST /api/chat/` fell through to the unscanned passthrough. Ollama
+  307-redirects the trailing-slash form to the canonical route and the
+  upstream client followed that redirect, so the request reached real
+  inference without the proxy calling the scanning API. The scanning service
+  itself is not affected. Two fixes:
+  - The passthrough now rejects with `404` any path that normalizes to a
+    scanned route (trailing or duplicate slashes, `.`/`..` segments,
+    percent-encoding, case, backslashes).
+  - The upstream Ollama client no longer follows redirects; 3xx responses are
+    returned to the client, whose retry goes back through the proxy routing.
+  Reported by V.A.N. Sreenivas <vansreenivas1@gmail.com>.
+
+### Tests
+- Add unit tests for scanned-route alias detection in the passthrough.
+
+### Fixed
+- Non-streaming requests that took longer than 120s failed with `503`: the
+  Ollama client had a hard-coded 120s read timeout that also overrode
+  `STREAM_CHUNK_TIMEOUT_SECS` for streams. `STREAM_CHUNK_TIMEOUT_SECS`
+  (default 300s, `0` disables) now sets the client read timeout for both
+  streaming and non-streaming requests. Drops the `async-stream` dependency.
+
+### Changed
+- Remove dead code: unused Ollama model/version types,
+  `OllamaClient::forward_get`, `OllamaError::ConfigError`.
+
+### Docs
+- Rewrite README: community proof-of-value disclaimer, list of scanned vs
+  passthrough routes (`/v1/*` compatibility endpoints are not scanned) and
+  `PASSTHROUGH_DISABLED`, corrected `config.yaml` example (`security.api_key`,
+  `security.profile_name`).
+- Rename `config.yaml.exemple` to `config.yaml.example` to match the docs.
+
+### Dependencies
+- Upgrade reqwest 0.12 -> 0.13 and tower-http 0.6 -> 0.7 (no code changes).
+  reqwest 0.13 uses rustls with the platform certificate verifier instead of
+  OpenSSL; the binary no longer links libssl and still trusts the system CA
+  store (`/etc/ssl/certs`, `SSL_CERT_FILE`).
+- Refresh Cargo.lock to latest compatible versions, including tokio 1.54.1,
+  uuid 1.29.3, serde_json 1.0.154, thiserror 2.0.21, hyper 1.12.0, plus
+  transitive updates.
+- Bump rustls 0.23.42 -> 0.23.46 (GHSA-c8m5-c952-6cm4, GHSA-w44r-93j7-qv28,
+  GHSA-h2v8-394m-p7vv).
+
+### Build
+- Docker builder moves from `rust:1.86-slim` to `rust:1.100-slim-trixie`
+  (uuid 1.29 needs Rust 1.89+) and the runtime from `debian:bookworm-slim` to
+  `debian:trixie-slim`. Bookworm is out of regular Debian security support;
+  both stages stay on the same release so glibc matches.
+- Drop `libssl-dev`/`pkg-config` from the builder and `libssl3` from the
+  runtime image, no longer needed without OpenSSL.
+
 ## [0.17.2] - 2026-07-20
 
 ### Dependencies

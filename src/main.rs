@@ -245,6 +245,11 @@ fn build_router(state: AppState) -> Router {
     // handler with PANW scanning. Everything else (model management,
     // metadata, OpenAI/Anthropic compat shims, future Ollama additions)
     // flows through the catch-all passthrough below without scanning.
+    //
+    // Keep in sync with `handlers::passthrough::SCANNED_PATHS`: the
+    // passthrough refuses any path that normalizes to one of these routes
+    // (trailing slash, `//`, `.`/`..`, percent-encoding, case), so a
+    // non-canonical spelling cannot skip the scanner.
     let scanned_routes = Router::new()
         .route("/api/generate", post(generate::handle_generate))
         .route("/api/chat", post(chat::handle_chat))

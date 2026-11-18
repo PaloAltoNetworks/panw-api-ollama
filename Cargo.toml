@@ -1,6 +1,6 @@
 [package]
 name = "panw-api-ollama"
-version = "0.17.2"
+version = "0.18.0"
 edition = "2021"
 
 [profile.release]
@@ -14,8 +14,8 @@ strip = true
 [dependencies]
 axum = "0.8.9"
 tokio = { version = "1.52.3", features = ["rt-multi-thread", "net", "signal", "macros", "time"] }
-tower-http = { version = "0.6.11", features = ["trace"] }
-reqwest = { version = "0.12.23", features = ["json", "stream"] }
+tower-http = { version = "0.7", features = ["trace"] }
+reqwest = { version = "0.13", features = ["json", "stream"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 serde_yaml_ng = "0.10.0"
@@ -25,7 +25,6 @@ tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt"] }
 thiserror = "2.0.18"
 bytes = "1.11.1"
-async-stream = "0.3.6"
 http-body-util = "0.1.3"
 chrono = { version = "0.4.44", features = ["serde", "clock"], default-features = false }
 pin-project = "1.1.13"

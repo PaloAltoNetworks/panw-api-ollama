@@ -36,10 +36,23 @@ pub enum OllamaError {
         // Error message provided by the API
         message: String,
     },
+}
 
-    // Configuration or initialization errors
-    #[error("Configuration error: {0}")]
-    ConfigError(String),
+// Maximum time to wait between two reads from upstream Ollama, for both
+// streaming chunks and non-streaming bodies (a non-streaming /api/chat sends
+// nothing until generation ends, so this also bounds a full completion).
+// Defends against a wedged or adversarial upstream that stalls a connection.
+//
+// Tunable via `STREAM_CHUNK_TIMEOUT_SECS` (default 300s; generous because
+// slow or reasoning models can think for minutes). `0` disables it.
+const DEFAULT_STREAM_CHUNK_TIMEOUT_SECS: u64 = 300;
+
+fn read_timeout() -> Option<std::time::Duration> {
+    let secs = std::env::var("STREAM_CHUNK_TIMEOUT_SECS")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(DEFAULT_STREAM_CHUNK_TIMEOUT_SECS);
+    (secs != 0).then(|| std::time::Duration::from_secs(secs))
 }
 
 // Client for interacting with the Ollama API.
@@ -73,14 +86,23 @@ impl OllamaClient {
     // ```
     pub fn new(base_url: String) -> Result<Self, reqwest::Error> {
         // Ollama generations can legitimately take many minutes; do NOT set an
-        // overall request timeout. Cap connect time and per-chunk read instead.
-        let client = Client::builder()
+        // overall request timeout. Cap connect time and per-read stall instead.
+        let mut builder = Client::builder();
+        if let Some(d) = read_timeout() {
+            builder = builder.read_timeout(d);
+        }
+        let client = builder
             .connect_timeout(std::time::Duration::from_secs(5))
-            .read_timeout(std::time::Duration::from_secs(120))
             .pool_max_idle_per_host(32)
             .pool_idle_timeout(std::time::Duration::from_secs(90))
             .tcp_keepalive(std::time::Duration::from_secs(30))
             .user_agent(concat!("panw-api-ollama/", env!("CARGO_PKG_VERSION")))
+            // Never follow upstream redirects. Ollama (gin) 307-redirects
+            // `/api/chat/` to `/api/chat` with the body preserved; following
+            // it here would land an unscanned passthrough request on a
+            // scanned inference endpoint. Redirects are returned to the
+            // client, whose retry then goes through the proxy's own routing.
+            .redirect(reqwest::redirect::Policy::none())
             .build()?;
         Ok(Self { client, base_url })
     }
@@ -109,24 +131,6 @@ impl OllamaClient {
         body: &T,
     ) -> Result<Response, OllamaError> {
         self.forward_request(endpoint, |url| self.client.post(url).json(body))
-            .await
-    }
-
-    // Forwards a GET request to the specified Ollama API endpoint.
-    //
-    // # Arguments
-    //
-    // * `endpoint` - The API endpoint to call (e.g., "/api/tags")
-    //
-    // # Returns
-    //
-    // The raw HTTP response from the Ollama API if successful
-    //
-    // # Errors
-    //
-    // Returns an error if the request fails or the API returns an error status
-    pub async fn forward_get(&self, endpoint: &str) -> Result<Response, OllamaError> {
-        self.forward_request(endpoint, |url| self.client.get(url))
             .await
     }
 
@@ -165,7 +169,7 @@ impl OllamaClient {
     // method, path, query, headers, and body bytes; does NOT scan, validate,
     // or rewrite the body.
     //
-    // Unlike `forward`/`forward_get`/`stream`, this method returns the
+    // Unlike `forward`/`stream`, this method returns the
     // upstream `Response` even when the status indicates failure, so the
     // fallback can pass non-2xx responses through verbatim. Errors are only
     // produced for true network failures (DNS, connect, timeout).
@@ -254,5 +258,52 @@ impl OllamaClient {
 
         debug!("Successfully received response from Ollama API");
         Ok(response)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // The streaming and non-streaming paths are covered by the live smoke
+    // suite; only the env parsing is unit-tested here.
+    //
+    // Note: these tests mutate process-wide env vars and therefore must not
+    // run concurrently with each other. They share a mutex via `serial_test`
+    // would be cleanest, but since this crate has no other env-touching tests
+    // we accept the convention that all `STREAM_CHUNK_TIMEOUT_SECS` access
+    // lives here and rely on cargo's per-test isolation when running with
+    // `--test-threads=1` for env-sensitive runs.
+    #[test]
+    fn read_timeout_default_when_env_unset() {
+        std::env::remove_var("STREAM_CHUNK_TIMEOUT_SECS");
+        assert_eq!(
+            read_timeout(),
+            Some(std::time::Duration::from_secs(DEFAULT_STREAM_CHUNK_TIMEOUT_SECS))
+        );
+    }
+
+    #[test]
+    fn read_timeout_respects_env_value() {
+        std::env::set_var("STREAM_CHUNK_TIMEOUT_SECS", "42");
+        assert_eq!(read_timeout(), Some(std::time::Duration::from_secs(42)));
+        std::env::remove_var("STREAM_CHUNK_TIMEOUT_SECS");
+    }
+
+    #[test]
+    fn read_timeout_zero_disables_timeout() {
+        std::env::set_var("STREAM_CHUNK_TIMEOUT_SECS", "0");
+        assert_eq!(read_timeout(), None);
+        std::env::remove_var("STREAM_CHUNK_TIMEOUT_SECS");
+    }
+
+    #[test]
+    fn read_timeout_falls_back_to_default_on_garbage() {
+        std::env::set_var("STREAM_CHUNK_TIMEOUT_SECS", "not-a-number");
+        assert_eq!(
+            read_timeout(),
+            Some(std::time::Duration::from_secs(DEFAULT_STREAM_CHUNK_TIMEOUT_SECS))
+        );
+        std::env::remove_var("STREAM_CHUNK_TIMEOUT_SECS");
     }
 }

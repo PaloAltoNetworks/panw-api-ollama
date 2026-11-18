@@ -2,208 +2,106 @@
 
 ![file](https://github.com/user-attachments/assets/b54e6622-97e7-4ef8-8cd7-09dd2c5d89f3)
 
-Enhance your Ollama deployment with enterprise-grade AI security using Palo Alto Networks Prisma AIRS AI Runtime API Intercept.
+A proxy that sits in front of [Ollama](https://ollama.com/) and sends prompts and responses to the Palo Alto Networks Prisma AIRS AI Runtime API (API Intercept) for scanning before they reach the model or the user.
 
-## What is this?
+> **Community proof-of-value project.** panw-api-ollama is an open-source sample integration, not a supported Palo Alto Networks product. Use it to evaluate and demo AI Runtime scanning with Ollama. Report issues here on GitHub, not through Palo Alto Networks support.
 
-panw-api-ollama is a security proxy that sits between your [OpenWebUI](https://openwebui.com/) interface and [Ollama](https://ollama.com/) instance. It works by intercepting all prompts and responses, analyzing them with Palo Alto Networks' Prisma AIRS AI Runtime security technology, and protecting your system from:
+## What it does
 
-- Prompt injection attacks
-- Data exfiltration attempts
+Point your client (for example [OpenWebUI](https://openwebui.com/)) at the proxy instead of Ollama. The proxy forwards everything to Ollama, and on the routes below it scans the content first. Depending on your AI Runtime security profile, a scan can block or mask:
+
+- Prompt injection
+- Data leakage (DLP, PII)
+- Malicious code and URLs
 - Harmful or toxic content
-- Personally identifiable information (PII) leakage
-- Other AI-specific security threats
 
-The best part? It's completely transparent to your existing setup - [Ollama](https://ollama.com/) will still work just as before, but with an added layer of security.
+Blocked prompts never reach the model. Blocked or masked responses are replaced before they reach the client, including in streaming mode.
 
-## Why use this?
+## What is scanned
 
-- **Prevent Security Incidents**: Detect and block malicious prompts before they reach your LLM
-- **Protect Sensitive Data**: Ensure responses don't contain unauthorized information
-- **Maintain Compliance**: Implement guardrails for safe AI usage in enterprise environments
-- **Visibility**: Gain insights into usage patterns and potential threats
+Only these routes are scanned:
 
-## Use Cases
+| Route | Scanned |
+|---|---|
+| `POST /api/chat` | prompt (all messages) and response |
+| `POST /api/generate` | prompt, `system`, `template`, and response |
+| `POST /api/embeddings`, `POST /api/embed` | input |
 
-- **Secure AI models in production**: Validate prompt requests and responses to protect deployed AI models.
-- **Detect data poisoning**: Identify contaminated training data before fine-tuning.
-- **Protect adversarial input**: Safeguard AI agents from malicious inputs and outputs while maintaining workflow flexibility.
-- **Prevent sensitive data leakage**: Use API-based threat detection to block sensitive data leaks during AI interactions.
+Every other path is forwarded to Ollama **without scanning**: model management (`/api/tags`, `/api/pull`, ...), and the OpenAI/Anthropic compatibility endpoints (`/v1/chat/completions`, `/v1/messages`, `/v1/embeddings`). If clients must not reach those, set `PASSTHROUGH_DISABLED=1` and every unhandled path returns `404`.
 
-## Upgrading to 0.17.0
+## Install
 
-> **Breaking change for operators with custom `config.yaml` files.**
->
-> 0.17.0 enables strict YAML decoding (`#[serde(deny_unknown_fields)]`) on
-> the `Config`, `ServerConfig`, `OllamaConfig`, and `SecurityConfig`
-> structs. Any field present in `config.yaml` that is **not** documented
-> in `config.yaml.example` will cause the proxy to fail at startup with
-> an error naming the offending field.
->
-> Why: this catches typos like `hsot:` instead of `host:` or stale keys
-> from older versions, instead of silently using a default and producing
-> puzzling runtime behavior.
->
-> Mitigation: the error message names the offending field; remove it
-> from `config.yaml` and restart. Strict decoding is **only** applied
-> to local config files - PANW response payloads continue to decode
-> leniently to absorb additive upstream schema changes.
->
-> See `CHANGELOG.md` for the full 0.17.0 change set.
+### Docker (recommended)
 
-## Installation Options
+See the [Docker setup guide](docker/README.md).
 
-There are two ways to install and run panw-api-ollama:
+### From source
 
-### Option 1: Docker Setup (Recommended)
+1. Build:
 
-Docker is the recommended installation method as it:
-- Handles all permissions automatically
-- Provides a pre-configured environment
-- Eliminates system-level dependency issues
-- Makes updates and maintenance easier
+   ```bash
+   git clone https://github.com/PaloAltoNetworks/panw-api-ollama.git
+   cd panw-api-ollama
+   cargo build --release
+   ```
 
-For Docker-based deployment, please refer to the instructions in the [Docker Setup README](docker/README.md).
+2. Get an AI Runtime API Intercept key and a security profile name: follow [this tutorial](https://docs.paloaltonetworks.com/ai-runtime-security/activation-and-onboarding/ai-runtime-security-api-intercept-overview/onboard-api-runtime-security-api-intercept-in-scm) (step 13 gives the API key).
 
-### Option 2: Build from Source
+3. Configure:
 
-If you prefer to build from source or can't use Docker, you can build the Rust application directly. Note that this method may require additional system configuration and could face permission issues depending on your setup.
+   ```bash
+   cp config.yaml.example config.yaml
+   ```
 
-#### Step 1: Build
+   Then set at least:
 
-```
-git clone https://github.com/PaloAltoNetworks/panw-api-ollama.git
-cd panw-api-ollama
-cargo build --release
-```
+   ```yaml
+   ollama:
+     base_url: "http://localhost:11434"
 
-### Step 2: Get a Palo Alto Networks Prisma AIRS AI Runtime API Intercept Key
+   security:
+     api_key: "your-api-key"
+     profile_name: "your-profile-name"
+   ```
 
-Follow [this tutorial](https://docs.paloaltonetworks.com/ai-runtime-security/activation-and-onboarding/ai-runtime-security-api-intercept-overview/onboard-api-runtime-security-api-intercept-in-scm), specifically step 13, to obtain your API key.
+   Unknown keys in `config.yaml` are rejected at startup, so stick to the keys in `config.yaml.example`.
 
-### Step 3: Configure
+4. Run:
 
-Rename `config.yaml.example` to `config.yaml` and update it with your API key:
+   ```bash
+   ./target/release/panw-api-ollama
+   ```
 
-```
-cp config.yaml.example config.yaml
-```
+   The proxy listens on port `11435` by default.
 
-Then edit the file to add your Palo Alto Networks Prisma AIRS AI Runtime API Intercept key:
+   Slow hardware or reasoning models: the proxy gives up on Ollama after `STREAM_CHUNK_TIMEOUT_SECS` (default `300`) without receiving data. A non-streaming request sends nothing until the answer is complete, so raise it (or set `0` to disable) if long answers fail with `503`.
 
-```yaml
-pan_api:
-  key: "your-pan-api-key-here"
-```
+5. Point your client at `http://localhost:11435` instead of Ollama's `11434`. In OpenWebUI: Admin Settings > Connections, add an Ollama server with that URL (or set [`OLLAMA_BASE_URLS`](https://docs.openwebui.com/getting-started/env-configuration#ollama_base_urls)).
 
-### Step 4: Update OpenWebUI
+## Demo: with and without scanning
 
-For non-Docker installations, you need to change the Ollama port in OpenWebUI from 11434 to 11435:
+`config-examples/` contains an OpenWebUI setup that exposes the same model twice, once through the proxy and once directly against Ollama, for side-by-side demos:
 
-1. Go to Settings > Server Management in the OpenWebUI interface
-2. Add a new Ollama server with URL: `http://localhost:11435` 
-3. Save your configuration
-
-Alternatively, update your OpenWebUI environment settings:
-[OpenWebUI Environment Configuration](https://docs.openwebui.com/getting-started/env-configuration#ollama_base_urls)
-
-### Step 5: Download a model
-
-Before using the service, make sure you have a model available:
-
-```bash
-ollama pull llama2-uncensored:latest
-```
-
-### Step 6: Run
-
-```bash
-./target/release/panw-api-ollama
-```
-
-You're all set! You can now use OpenWebUI as normal, but with enterprise security scanning all interactions.
-
-## Configuration Examples
-
-The project includes example configuration files in the `config-examples` directory that demonstrate different setup options:
-
-### OpenWebUI Global Configuration
-
-The `config-1747909231428.json` file shows how to set up OpenWebUI with both secured and unsecured Ollama connections:
-
-```json
-{
-    "ollama": {
-        "enable": true,
-        "base_urls": [
-            "http://panw-api-ollama:11435",  // Secure connection through panw-api-ollama
-            "http://host.docker.internal:11434"  // Direct connection to Ollama
-        ],
-        "api_configs": {
-            "0": {
-                "enable": true,
-                "tags": [],
-                "prefix_id": "PANW",  // Models with this prefix use the security proxy
-                "model_ids": [
-                    "llama2-uncensored:latest"
-                ],
-                "key": ""
-            },
-            "1": {
-                "enable": true,
-                "tags": [],
-                "prefix_id": "NOPAWN",  // Models with this prefix bypass the security proxy
-                "model_ids": [
-                    "nomic-embed-text:latest",
-                    "llama2-uncensored:latest"
-                ],
-                "key": ""
-            }
-        }
-    }
-}
-```
-
-### Model Configurations
-
-Two example model configurations are included to demonstrate before/after comparisons:
-
-1. `PANW.llama2-uncensored_latest-1747909321539.json` - A model using the security proxy
-2. `NOPAWN.llama2-uncensored_latest-1747909327080.json` - The same model bypassing the security proxy
-
-These configurations allow you to perform side-by-side comparisons and demonstrations of how the Palo Alto Networks Prisma AIRS AI Runtime Security affects the model responses.
+- `config-1747909231428.json`: OpenWebUI connections, models prefixed `PANW` go through the proxy, `NOPAWN` go straight to Ollama.
+- `PANW.llama2-uncensored_latest-1747909321539.json` and `NOPAWN.llama2-uncensored_latest-1747909327080.json`: the matching model configurations.
 
 ## Smoke tests
 
-End-to-end smoke tests live in `tests/smoke.rs` and cover every documented
-endpoint - benign and malicious payloads, streaming and non-streaming,
-chat (including thinking and code snippets), generate, and embeddings.
-They are gated behind `#[ignore]` so `cargo test` stays fast and offline.
-
-Run against a live proxy:
+End-to-end tests live in `tests/smoke.rs` (benign and malicious payloads, streaming and non-streaming, chat, generate, embeddings). They are `#[ignore]`d so `cargo test` stays offline.
 
 ```bash
-# proxy already running on localhost:11435 with upstream Ollama on :11434
+# proxy on localhost:11435, Ollama on :11434
 cargo test --test smoke -- --ignored --nocapture
 
-# point at a different proxy / model
+# different proxy / model
 BASE_URL=http://my-proxy:11435 \
   MODEL=llama3.1:8b \
   EMBED_MODEL=nomic-embed-text \
   cargo test --test smoke -- --ignored --nocapture
 ```
 
-The malicious test cases include prompt-injection text, reverse-shell
-shell snippets, and DLP probes; the proxy must either block (HTTP 403)
-or return a masked / safety-rejected response.
-
 ## Resources
 
-- [Product Information](https://www.paloaltonetworks.com/prisma/prisma-ai-runtime-security)
-- [Documentation](https://docs.paloaltonetworks.com/ai-runtime-security)
-- [API Reference](https://pan.dev/prisma-airs/scan/api/)
-
-## Support
-
-For issues related to this integration, please file an issue on GitHub.
-For questions about Palo Alto Networks Prisma AIRS AI Runtime API Intercept, please refer to official support channels.
+- [Prisma AIRS AI Runtime documentation](https://docs.paloaltonetworks.com/ai-runtime-security)
+- [Scan API reference](https://pan.dev/prisma-airs/scan/api/)
+- [CHANGELOG](CHANGELOG.md)

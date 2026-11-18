@@ -47,7 +47,7 @@ fn ollama_base() -> String {
 
 fn client() -> reqwest::Client {
     reqwest::Client::builder()
-        .timeout(Duration::from_secs(180))
+        .timeout(Duration::from_secs(600))
         .build()
         .expect("build reqwest client for smoke tests")
 }
