@@ -8,10 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.18.0] - 2026-11-18
 
 ### Dependencies
-- Bump rustls 0.23.42 -> 0.23.46 and rustls-webpki 0.103.13 -> 0.103.17
-  (GHSA-c8m5-c952-6cm4, GHSA-w44r-93j7-qv28, GHSA-h2v8-394m-p7vv). rustls is
-  in the lockfile but not compiled into the default build, which uses
-  native-tls; the bump clears the advisories.
+- Upgrade reqwest 0.12 -> 0.13 and tower-http 0.6 -> 0.7 (no code changes).
+  reqwest 0.13 uses rustls with the platform certificate verifier instead of
+  OpenSSL; the binary no longer links libssl and still trusts the system CA
+  store (`/etc/ssl/certs`, `SSL_CERT_FILE`).
+- Refresh Cargo.lock to latest compatible versions, including tokio 1.54.1,
+  uuid 1.29.3, serde_json 1.0.154, thiserror 2.0.21, hyper 1.12.0, plus
+  transitive updates.
+- Bump rustls 0.23.42 -> 0.23.46 (GHSA-c8m5-c952-6cm4, GHSA-w44r-93j7-qv28,
+  GHSA-h2v8-394m-p7vv).
+
+### Build
+- Docker builder moves from `rust:1.86-slim` to `rust:1.100-slim-bookworm`
+  (uuid 1.29 needs Rust 1.89+). Pinned to bookworm to match the runtime
+  stage's glibc.
+- Drop `libssl-dev`/`pkg-config` from the builder and `libssl3` from the
+  runtime image, no longer needed without OpenSSL.
 
 ## [0.17.2] - 2026-07-20
 
