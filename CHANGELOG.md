@@ -5,6 +5,14 @@ All notable changes to panw-api-ollama are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.0] - 2026-11-18
+
+### Dependencies
+- Bump rustls 0.23.42 -> 0.23.46 and rustls-webpki 0.103.13 -> 0.103.17
+  (GHSA-c8m5-c952-6cm4, GHSA-w44r-93j7-qv28, GHSA-h2v8-394m-p7vv). rustls is
+  in the lockfile but not compiled into the default build, which uses
+  native-tls; the bump clears the advisories.
+
 ## [0.17.2] - 2026-07-20
 
 ### Dependencies
