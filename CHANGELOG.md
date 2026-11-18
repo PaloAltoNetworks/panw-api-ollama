@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.18.0] - 2026-11-18
 
+### Security
+- Fix a routing flaw in the proxy that let non-canonical paths skip content
+  scanning (CWE-693, CWE-436). Scanned routes (`/api/generate`, `/api/chat`,
+  `/api/embeddings`, `/api/embed`) matched exact paths only, so a variant like
+  `POST /api/chat/` fell through to the unscanned passthrough. Ollama
+  307-redirects the trailing-slash form to the canonical route and the
+  upstream client followed that redirect, so the request reached real
+  inference without the proxy calling the scanning API. The scanning service
+  itself is not affected. Two fixes:
+  - The passthrough now rejects with `404` any path that normalizes to a
+    scanned route (trailing or duplicate slashes, `.`/`..` segments,
+    percent-encoding, case, backslashes).
+  - The upstream Ollama client no longer follows redirects; 3xx responses are
+    returned to the client, whose retry goes back through the proxy routing.
+  Reported by V.A.N. Sreenivas <vansreenivas1@gmail.com>.
+
+### Tests
+- Add unit tests for scanned-route alias detection in the passthrough.
+
 ### Dependencies
 - Upgrade reqwest 0.12 -> 0.13 and tower-http 0.6 -> 0.7 (no code changes).
   reqwest 0.13 uses rustls with the platform certificate verifier instead of

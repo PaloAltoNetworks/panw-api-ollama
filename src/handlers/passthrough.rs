@@ -16,6 +16,11 @@
 //!
 //! The fallback can be disabled at runtime by setting
 //! `PASSTHROUGH_DISABLED=1`, in which case unhandled paths return `404`.
+//!
+//! Requests whose path is a non-canonical spelling of a scanned route
+//! (`/api/chat/`, `/api//chat`, `/api/./chat`, `/api/%63hat`, `/API/CHAT`, …)
+//! are rejected with `404` instead of being forwarded, because upstream
+//! Ollama may normalize them back onto the real inference handler.
 
 use axum::{
     body::Body,
@@ -27,6 +32,69 @@ use http_body_util::BodyExt;
 use tracing::{info, warn};
 
 use crate::AppState;
+
+/// Routes registered with a scanning handler in `build_router`. Keep in sync
+/// with `main.rs`.
+pub const SCANNED_PATHS: &[&str] = &[
+    "/api/generate",
+    "/api/chat",
+    "/api/embeddings",
+    "/api/embed",
+];
+
+/// Decodes `%XX` escapes once. Invalid escapes are kept verbatim.
+fn percent_decode_once(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            let hex = |b: u8| (b as char).to_digit(16);
+            if let (Some(h), Some(l)) = (hex(bytes[i + 1]), hex(bytes[i + 2])) {
+                out.push((h * 16 + l) as u8);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// Reduces a request path to a canonical form for comparison against
+/// `SCANNED_PATHS`. Deliberately more aggressive than any upstream router:
+/// percent-decodes until stable, lowercases, treats `\` as `/`, collapses
+/// empty segments, and resolves `.` / `..`. The result is used only for the
+/// deny check, never forwarded.
+fn canonical_path(path: &str) -> String {
+    let mut decoded = path.to_string();
+    for _ in 0..4 {
+        let next = percent_decode_once(&decoded);
+        if next == decoded {
+            break;
+        }
+        decoded = next;
+    }
+    let lowered = decoded.to_ascii_lowercase().replace('\\', "/");
+    let mut segments: Vec<&str> = Vec::new();
+    for seg in lowered.split('/') {
+        match seg {
+            "" | "." => {}
+            ".." => {
+                segments.pop();
+            }
+            s => segments.push(s),
+        }
+    }
+    format!("/{}", segments.join("/"))
+}
+
+/// True when `path` is a (non-canonical) alias of a scanned route.
+fn aliases_scanned_route(path: &str) -> bool {
+    let canonical = canonical_path(path);
+    SCANNED_PATHS.contains(&canonical.as_str())
+}
 
 /// Returns true when the operator has explicitly opted out of passthrough.
 fn passthrough_disabled() -> bool {
@@ -72,6 +140,21 @@ pub async fn passthrough(
     if passthrough_disabled() {
         warn!(
             "Passthrough disabled (PASSTHROUGH_DISABLED=1); rejecting {} {}",
+            method, uri
+        );
+        return Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .body(Body::from("Not Found"))
+            .expect("build 404 response");
+    }
+
+    // Exact matches never reach the fallback (axum routes them, or answers
+    // 405 on a method mismatch), so any hit here is an alias such as
+    // `/api/chat/`. Refuse it rather than let upstream normalization turn it
+    // into an unscanned inference call.
+    if aliases_scanned_route(uri.path()) {
+        warn!(
+            "Rejecting non-canonical path to a scanned endpoint: {} {}",
             method, uri
         );
         return Response::builder()
@@ -162,4 +245,62 @@ pub async fn passthrough(
             .body(Body::from("Failed to construct upstream response"))
             .expect("build 502 fallback")
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exact_scanned_paths_are_their_own_canonical_form() {
+        for p in SCANNED_PATHS {
+            assert_eq!(canonical_path(p), *p);
+        }
+    }
+
+    #[test]
+    fn aliases_of_scanned_routes_are_detected() {
+        for p in [
+            "/api/chat/",
+            "/api/generate/",
+            "/api/embed/",
+            "/api/embeddings//",
+            "//api//chat",
+            "/api/./chat",
+            "/api/x/../chat",
+            "/api/%63hat",
+            "/api%2Fchat",
+            "/api/%2563hat",
+            "/API/Chat",
+            "/api\\chat",
+            "/api/chat/.",
+        ] {
+            assert!(aliases_scanned_route(p), "{p} should alias a scanned route");
+        }
+    }
+
+    #[test]
+    fn unrelated_paths_still_pass_through() {
+        for p in [
+            "/api/tags",
+            "/api/version",
+            "/api/chatx",
+            "/api/chat/extra",
+            "/api/embed/x",
+            "/v1/chat/completions",
+            "/api/blobs/sha256:abc",
+            "/",
+        ] {
+            assert!(
+                !aliases_scanned_route(p),
+                "{p} should not alias a scanned route"
+            );
+        }
+    }
+
+    #[test]
+    fn invalid_percent_escapes_are_kept_verbatim() {
+        assert_eq!(percent_decode_once("/a%zz%4"), "/a%zz%4");
+        assert_eq!(percent_decode_once("/a%41"), "/aA");
+    }
 }

@@ -880,7 +880,7 @@ checksum = "7e036b411754132fd6b74e94b74e9a13c5cf606fa93d1885c35860d3060820b1"
 
 [[package]]
 name = "panw-api-ollama"
-version = "0.17.2"
+version = "0.18.0"
 dependencies = [
  "async-stream",
  "axum",
