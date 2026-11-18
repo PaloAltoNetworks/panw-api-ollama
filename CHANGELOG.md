@@ -26,6 +26,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Tests
 - Add unit tests for scanned-route alias detection in the passthrough.
 
+### Docs
+- Rewrite README: community proof-of-value disclaimer, list of scanned vs
+  passthrough routes (`/v1/*` compatibility endpoints are not scanned) and
+  `PASSTHROUGH_DISABLED`, corrected `config.yaml` example (`security.api_key`,
+  `security.profile_name`).
+- Rename `config.yaml.exemple` to `config.yaml.example` to match the docs.
+
 ### Dependencies
 - Upgrade reqwest 0.12 -> 0.13 and tower-http 0.6 -> 0.7 (no code changes).
   reqwest 0.13 uses rustls with the platform certificate verifier instead of
