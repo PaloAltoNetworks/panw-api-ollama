@@ -42,11 +42,6 @@ pub fn build_json_response(bytes: Bytes) -> Result<Response<Body>, ApiError> {
         .map_err(|e| ApiError::InternalError(format!("Failed to create response: {}", e)))
 }
 
-// Helper function to convert `reqwest::Error` to `StreamError`.
-fn convert_stream_error(err: reqwest::Error) -> reqwest::Error {
-    err // Maintain original error type
-}
-
 // Handles streaming requests to API endpoints, applying security assessment to the streamed responses.
 pub async fn handle_streaming_request<T>(
     state: &AppState,
@@ -95,12 +90,9 @@ where
     // bound without changing the downstream API.
     let timed_stream = Box::pin(timed_stream);
 
-    // Convert the stream to the expected type by mapping the error type
-    let converted_stream = timed_stream.map(|result| result.map_err(convert_stream_error));
-
     // Create the security-assessed stream
     let assessed_stream = SecurityAssessedStream::new(
-        converted_stream,
+        timed_stream,
         state.security_client.clone(),
         model.to_string(),
         is_prompt,

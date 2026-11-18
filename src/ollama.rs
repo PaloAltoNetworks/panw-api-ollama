@@ -36,10 +36,6 @@ pub enum OllamaError {
         // Error message provided by the API
         message: String,
     },
-
-    // Configuration or initialization errors
-    #[error("Configuration error: {0}")]
-    ConfigError(String),
 }
 
 // Client for interacting with the Ollama API.
@@ -118,24 +114,6 @@ impl OllamaClient {
             .await
     }
 
-    // Forwards a GET request to the specified Ollama API endpoint.
-    //
-    // # Arguments
-    //
-    // * `endpoint` - The API endpoint to call (e.g., "/api/tags")
-    //
-    // # Returns
-    //
-    // The raw HTTP response from the Ollama API if successful
-    //
-    // # Errors
-    //
-    // Returns an error if the request fails or the API returns an error status
-    pub async fn forward_get(&self, endpoint: &str) -> Result<Response, OllamaError> {
-        self.forward_request(endpoint, |url| self.client.get(url))
-            .await
-    }
-
     // Sets up a streaming request to the specified Ollama API endpoint.
     //
     // This method is used for endpoints that support server-sent events or
@@ -171,7 +149,7 @@ impl OllamaClient {
     // method, path, query, headers, and body bytes; does NOT scan, validate,
     // or rewrite the body.
     //
-    // Unlike `forward`/`forward_get`/`stream`, this method returns the
+    // Unlike `forward`/`stream`, this method returns the
     // upstream `Response` even when the status indicates failure, so the
     // fallback can pass non-2xx responses through verbatim. Errors are only
     // produced for true network failures (DNS, connect, timeout).

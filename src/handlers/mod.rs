@@ -100,10 +100,6 @@ impl IntoResponse for ApiError {
                             )
                         }
                     }
-                    crate::ollama::OllamaError::ConfigError(_) => (
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        "Ollama client misconfigured.".to_string(),
-                    ),
                 }
             }
             ApiError::SecurityError(e) => {
@@ -237,16 +233,6 @@ mod tests {
         assert_eq!(status, StatusCode::BAD_GATEWAY);
         assert!(msg.contains("Upstream Ollama"));
         assert!(!msg.contains("internal.rs"));
-    }
-
-    #[tokio::test]
-    async fn ollama_config_error_returns_500() {
-        let leaky = ApiError::OllamaError(crate::ollama::OllamaError::ConfigError(
-            "missing CA bundle at /opt/secret-path".into(),
-        ));
-        let (status, msg, _) = render(leaky).await;
-        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
-        assert!(!msg.contains("/opt/secret-path"));
     }
 
     #[tokio::test]
