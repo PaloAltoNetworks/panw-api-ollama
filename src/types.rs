@@ -163,62 +163,6 @@ pub struct EmbeddingsResponse {
     pub embedding: Vec<f32>,
 }
 
-/// Response containing a list of available models from the Ollama API.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ListModelsResponse {
-    /// Array of ModelInfo objects with details about each available model
-    pub models: Vec<ModelInfo>,
-}
-
-/// Detailed information about a specific Ollama model.
-///
-/// Contains both basic metadata and detailed specifications about the model.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ModelInfo {
-    /// The model's name/identifier
-    pub name: String,
-
-    /// Timestamp when the model was last modified
-    pub modified_at: String,
-
-    /// Size of the model in bytes
-    pub size: u64,
-
-    /// Unique hash identifying this version of the model
-    pub digest: String,
-
-    /// Additional technical specifications of the model
-    pub details: ModelDetails,
-}
-
-/// Technical specifications of an Ollama model.
-///
-/// Contains details about the model's architecture, size, and quantization.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ModelDetails {
-    /// Model format (e.g., "gguf")
-    pub format: String,
-
-    /// Model family/architecture (e.g., "llama")
-    pub family: String,
-
-    /// All compatible model families
-    pub families: Vec<String>,
-
-    /// Human-readable parameter count (e.g., "7B")
-    pub parameter_size: String,
-
-    /// Level of precision reduction applied (e.g., "Q4_0")
-    pub quantization_level: String,
-}
-
-/// Response containing the Ollama API version information.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct VersionResponse {
-    /// Version string of the Ollama API
-    pub version: String,
-}
-
 //------------------------------------------------------------------------------
 // PANW Security Types
 //------------------------------------------------------------------------------

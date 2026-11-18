@@ -26,6 +26,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Tests
 - Add unit tests for scanned-route alias detection in the passthrough.
 
+### Fixed
+- Non-streaming requests that took longer than 120s failed with `503`: the
+  Ollama client had a hard-coded 120s read timeout that also overrode
+  `STREAM_CHUNK_TIMEOUT_SECS` for streams. `STREAM_CHUNK_TIMEOUT_SECS`
+  (default 300s, `0` disables) now sets the client read timeout for both
+  streaming and non-streaming requests. Drops the `async-stream` dependency.
+
+### Changed
+- Remove dead code: unused Ollama model/version types,
+  `OllamaClient::forward_get`, `OllamaError::ConfigError`.
+
 ### Docs
 - Rewrite README: community proof-of-value disclaimer, list of scanned vs
   passthrough routes (`/v1/*` compatibility endpoints are not scanned) and
