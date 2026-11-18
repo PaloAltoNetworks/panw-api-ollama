@@ -74,6 +74,8 @@ See the [Docker setup guide](docker/README.md).
 
    The proxy listens on port `11435` by default.
 
+   Slow hardware or reasoning models: the proxy gives up on Ollama after `STREAM_CHUNK_TIMEOUT_SECS` (default `300`) without receiving data. A non-streaming request sends nothing until the answer is complete, so raise it (or set `0` to disable) if long answers fail with `503`.
+
 5. Point your client at `http://localhost:11435` instead of Ollama's `11434`. In OpenWebUI: Admin Settings > Connections, add an Ollama server with that URL (or set [`OLLAMA_BASE_URLS`](https://docs.openwebui.com/getting-started/env-configuration#ollama_base_urls)).
 
 ## Demo: with and without scanning

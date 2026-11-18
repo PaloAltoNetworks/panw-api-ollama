@@ -38,6 +38,23 @@ pub enum OllamaError {
     },
 }
 
+// Maximum time to wait between two reads from upstream Ollama, for both
+// streaming chunks and non-streaming bodies (a non-streaming /api/chat sends
+// nothing until generation ends, so this also bounds a full completion).
+// Defends against a wedged or adversarial upstream that stalls a connection.
+//
+// Tunable via `STREAM_CHUNK_TIMEOUT_SECS` (default 300s; generous because
+// slow or reasoning models can think for minutes). `0` disables it.
+const DEFAULT_STREAM_CHUNK_TIMEOUT_SECS: u64 = 300;
+
+fn read_timeout() -> Option<std::time::Duration> {
+    let secs = std::env::var("STREAM_CHUNK_TIMEOUT_SECS")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(DEFAULT_STREAM_CHUNK_TIMEOUT_SECS);
+    (secs != 0).then(|| std::time::Duration::from_secs(secs))
+}
+
 // Client for interacting with the Ollama API.
 //
 // This client provides methods for sending requests to Ollama endpoints
@@ -69,10 +86,13 @@ impl OllamaClient {
     // ```
     pub fn new(base_url: String) -> Result<Self, reqwest::Error> {
         // Ollama generations can legitimately take many minutes; do NOT set an
-        // overall request timeout. Cap connect time and per-chunk read instead.
-        let client = Client::builder()
+        // overall request timeout. Cap connect time and per-read stall instead.
+        let mut builder = Client::builder();
+        if let Some(d) = read_timeout() {
+            builder = builder.read_timeout(d);
+        }
+        let client = builder
             .connect_timeout(std::time::Duration::from_secs(5))
-            .read_timeout(std::time::Duration::from_secs(120))
             .pool_max_idle_per_host(32)
             .pool_idle_timeout(std::time::Duration::from_secs(90))
             .tcp_keepalive(std::time::Duration::from_secs(30))
@@ -238,5 +258,52 @@ impl OllamaClient {
 
         debug!("Successfully received response from Ollama API");
         Ok(response)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // The streaming and non-streaming paths are covered by the live smoke
+    // suite; only the env parsing is unit-tested here.
+    //
+    // Note: these tests mutate process-wide env vars and therefore must not
+    // run concurrently with each other. They share a mutex via `serial_test`
+    // would be cleanest, but since this crate has no other env-touching tests
+    // we accept the convention that all `STREAM_CHUNK_TIMEOUT_SECS` access
+    // lives here and rely on cargo's per-test isolation when running with
+    // `--test-threads=1` for env-sensitive runs.
+    #[test]
+    fn read_timeout_default_when_env_unset() {
+        std::env::remove_var("STREAM_CHUNK_TIMEOUT_SECS");
+        assert_eq!(
+            read_timeout(),
+            Some(std::time::Duration::from_secs(DEFAULT_STREAM_CHUNK_TIMEOUT_SECS))
+        );
+    }
+
+    #[test]
+    fn read_timeout_respects_env_value() {
+        std::env::set_var("STREAM_CHUNK_TIMEOUT_SECS", "42");
+        assert_eq!(read_timeout(), Some(std::time::Duration::from_secs(42)));
+        std::env::remove_var("STREAM_CHUNK_TIMEOUT_SECS");
+    }
+
+    #[test]
+    fn read_timeout_zero_disables_timeout() {
+        std::env::set_var("STREAM_CHUNK_TIMEOUT_SECS", "0");
+        assert_eq!(read_timeout(), None);
+        std::env::remove_var("STREAM_CHUNK_TIMEOUT_SECS");
+    }
+
+    #[test]
+    fn read_timeout_falls_back_to_default_on_garbage() {
+        std::env::set_var("STREAM_CHUNK_TIMEOUT_SECS", "not-a-number");
+        assert_eq!(
+            read_timeout(),
+            Some(std::time::Duration::from_secs(DEFAULT_STREAM_CHUNK_TIMEOUT_SECS))
+        );
+        std::env::remove_var("STREAM_CHUNK_TIMEOUT_SECS");
     }
 }
