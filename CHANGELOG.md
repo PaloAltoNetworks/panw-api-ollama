@@ -19,9 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   GHSA-h2v8-394m-p7vv).
 
 ### Build
-- Docker builder moves from `rust:1.86-slim` to `rust:1.100-slim-bookworm`
-  (uuid 1.29 needs Rust 1.89+). Pinned to bookworm to match the runtime
-  stage's glibc.
+- Docker builder moves from `rust:1.86-slim` to `rust:1.100-slim-trixie`
+  (uuid 1.29 needs Rust 1.89+) and the runtime from `debian:bookworm-slim` to
+  `debian:trixie-slim`. Bookworm is out of regular Debian security support;
+  both stages stay on the same release so glibc matches.
 - Drop `libssl-dev`/`pkg-config` from the builder and `libssl3` from the
   runtime image, no longer needed without OpenSSL.
 

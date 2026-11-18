@@ -1,5 +1,5 @@
 # Builder must stay on the same Debian release as the runtime stage (glibc).
-FROM rust:1.100-slim-bookworm AS builder
+FROM rust:1.100-slim-trixie AS builder
 
 WORKDIR /usr/src/app
 COPY . .
@@ -8,7 +8,7 @@ COPY . .
 RUN cargo build --release
 
 # Create a smaller runtime image
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 
 # Install minimal packages needed for runtime and security updates
 RUN apt-get update && \
