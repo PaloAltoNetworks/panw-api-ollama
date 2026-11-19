@@ -6,6 +6,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
+  IMAGE_DESCRIPTION: Community proof-of-value proxy for Ollama that scans prompts and responses with the Palo Alto Networks Prisma AIRS AI Runtime API.
 
 jobs:
   build-and-push:
@@ -63,6 +64,11 @@ jobs:
             org.opencontainers.image.version=${{ steps.meta.outputs.version }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.description=${{ env.IMAGE_DESCRIPTION }}
+          # ghcr reads the description of a multi-arch image from the index
+          # annotations, not from per-platform labels.
+          annotations: |
+            index:org.opencontainers.image.description=${{ env.IMAGE_DESCRIPTION }}
           cache-from: |
             type=gha
             type=registry,ref=${{ steps.meta.outputs.image_ref }}:cache
