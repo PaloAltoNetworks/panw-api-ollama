@@ -5,6 +5,13 @@ All notable changes to panw-api-ollama are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.18.1] - 2026-11-19
+
+### CI
+- The ghcr package page now shows a description for each image version, with
+  a link to that version's release notes (`org.opencontainers.image.description`
+  index annotation). No code changes since 0.18.0.
+
 ## [0.18.0] - 2026-11-18
 
 ### Security
