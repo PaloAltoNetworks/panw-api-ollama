@@ -64,11 +64,11 @@ jobs:
             org.opencontainers.image.version=${{ steps.meta.outputs.version }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.licenses=MIT
-            org.opencontainers.image.description=${{ env.IMAGE_DESCRIPTION }}
+            org.opencontainers.image.description=${{ env.IMAGE_DESCRIPTION }} Release notes: ${{ steps.meta.outputs.release_url }}
           # ghcr reads the description of a multi-arch image from the index
           # annotations, not from per-platform labels.
           annotations: |
-            index:org.opencontainers.image.description=${{ env.IMAGE_DESCRIPTION }}
+            index:org.opencontainers.image.description=${{ env.IMAGE_DESCRIPTION }} Release notes: ${{ steps.meta.outputs.release_url }}
           cache-from: |
             type=gha
             type=registry,ref=${{ steps.meta.outputs.image_ref }}:cache
